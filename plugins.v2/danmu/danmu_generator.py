@@ -239,7 +239,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     @classmethod
     def convert_comments_to_ass(cls, comments: List[Dict], output_file: str, width: int, height: int, fontface: str,
-                                fontsize: float, alpha: float, duration: float, convert_t_2_s: bool):
+                                fontsize: float, alpha: float, duration: float, convert_t_2_s: bool, subtitle_area_height: int = 150):
         styleid = 'Danmu'
         max_tracks = int(height) // int(fontsize)
         scrolling_tracks = {}
@@ -288,6 +288,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         styles = f'\\move({width}, {initial_y}, {-len(text)*fontsize}, {initial_y})'
                     elif pos == 4:  # 底部弹幕
                         track_id = cls.find_non_overlapping_track(bottom_tracks, timeline, max_tracks)
+                        # 如果启用避开字幕区域且是底部弹幕，检查是否会遮挡字幕
+                        if subtitle_area_height != 0:
+                            bottom_position = height - 50 - (track_id - 1) * fontsize
+                            if bottom_position > (height - subtitle_area_height):
+                                continue
                         bottom_tracks[track_id] = timeline + duration
                         styles = f'\\an2\\pos({width/2}, {height - 50 - (track_id - 1) * fontsize})'
                     elif pos == 5:  # 顶部弹幕
@@ -431,7 +436,7 @@ def danmu_generator(file_path: str, width: int = 1920, height: int = 1080,
                    fontface: str = 'Arial', fontsize: float = 50, 
                    alpha: float = 0.8, duration: float = 6, onlyFromBili: bool = False,
                    use_tmdb_id: bool = False, convert_t_2_s: bool = False, tmdb_id: Optional[int] = None,
-                   episode: Optional[int] = None) -> Optional[str]:
+                   episode: Optional[int] = None, subtitle_area_height: int = 150) -> Optional[str]:
     try:
         comment_id = DanmuAPI.get_comment_id(file_path, use_tmdb_id, tmdb_id, episode)
         if not comment_id:
@@ -463,7 +468,8 @@ def danmu_generator(file_path: str, width: int = 1920, height: int = 1080,
             fontsize=float(fontsize), 
             alpha=float(alpha), 
             duration=float(duration),
-            convert_t_2_s = convert_t_2_s
+            convert_t_2_s = convert_t_2_s,
+            subtitle_area_height = subtitle_area_height
         )
 
         sub2 = SubtitleProcessor.find_subtitle_file(file_path)

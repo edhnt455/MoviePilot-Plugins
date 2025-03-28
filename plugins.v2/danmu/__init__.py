@@ -26,7 +26,7 @@ class Danmu(_PluginBase):
     # 主题色
     plugin_color = "#3B5E8E"
     # 插件版本
-    plugin_version = "1.1.14"
+    plugin_version = "1.1.15"
     # 插件作者
     plugin_author = "edhnt455"
     # 作者主页
@@ -53,6 +53,7 @@ class Danmu(_PluginBase):
     _onlyFromBili = False
     _useTmdbID = True
     _convertT2S = True
+    _subtitle_area_height = 150
     
     media_chain = MediaChain()
     
@@ -70,6 +71,7 @@ class Danmu(_PluginBase):
             self._onlyFromBili = config.get("onlyFromBili", False)
             self._useTmdbID = config.get("useTmdbID", True)
             self._convertT2S = config.get("convertT2S", True)
+            self._subtitle_area_height = config.get("subtitle_area_height", 150)
         if self._enabled:
             logger.info("弹幕加载插件已启用")
             
@@ -310,6 +312,28 @@ class Danmu(_PluginBase):
                         'content': [
                             {
                                 'component': 'VCol',
+                                'props': {
+                                    'cols': 6,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'subtitle_area_height',
+                                            'label': '底部字幕防遮挡范围，默认150，为0不开启防遮挡',
+                                            'type': 'number',
+
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
                                 'content': [
                                     {
                                         'component': 'VTextarea',
@@ -355,7 +379,8 @@ class Danmu(_PluginBase):
             "path": "",
             "onlyFromBili": False,
             "useTmdbID": True,
-            "convertT2S": True
+            "convertT2S": True,
+            "subtitle_area_height": 150
         }
 
     def get_page(self) -> List[dict]:
@@ -390,7 +415,8 @@ class Danmu(_PluginBase):
                 self._useTmdbID,
                 self._convertT2S,
                 tmdb_id,
-                episode
+                episode,
+                self._subtitle_area_height
             )
         except Exception as e:
             logger.error(f"生成弹幕失败: {e}")
