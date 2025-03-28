@@ -238,8 +238,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         return possible_track
 
     @classmethod
-    def convert_comments_to_ass(cls, comments: List[Dict], output_file: str, width: int, 
-                              height: int, fontface: str, fontsize: float, alpha: float, duration: float):
+    def convert_comments_to_ass(cls, comments: List[Dict], output_file: str, width: int, height: int, fontface: str,
+                                fontsize: float, alpha: float, duration: float, convert_t_2_s: bool):
         styleid = 'Danmu'
         max_tracks = int(height) // int(fontsize)
         scrolling_tracks = {}
@@ -262,8 +262,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     pos = int(p[1])
                     color = int(p[2])
                     text = comment.get('m', '')
-                    # 添加繁体转简体转换
-                    text = cls.convert_traditional_to_simplified(text)
+                    # 繁体转简体
+                    if convert_t_2_s:
+                        text = cls.convert_traditional_to_simplified(text)
                     user = str(p[3])
 
                     if not text:
@@ -429,7 +430,7 @@ class SubtitleProcessor:
 def danmu_generator(file_path: str, width: int = 1920, height: int = 1080, 
                    fontface: str = 'Arial', fontsize: float = 50, 
                    alpha: float = 0.8, duration: float = 6, onlyFromBili: bool = False,
-                   use_tmdb_id: bool = False, tmdb_id: Optional[int] = None,
+                   use_tmdb_id: bool = False, convert_t_2_s: bool = False, tmdb_id: Optional[int] = None,
                    episode: Optional[int] = None) -> Optional[str]:
     try:
         comment_id = DanmuAPI.get_comment_id(file_path, use_tmdb_id, tmdb_id, episode)
@@ -461,7 +462,8 @@ def danmu_generator(file_path: str, width: int = 1920, height: int = 1080,
             fontface=fontface, 
             fontsize=float(fontsize), 
             alpha=float(alpha), 
-            duration=float(duration)
+            duration=float(duration),
+            convert_t_2_s = convert_t_2_s
         )
 
         sub2 = SubtitleProcessor.find_subtitle_file(file_path)

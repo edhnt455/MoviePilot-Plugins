@@ -52,6 +52,7 @@ class Danmu(_PluginBase):
     _max_threads = 10
     _onlyFromBili = False
     _useTmdbID = True
+    _convertT2s = True
     
     media_chain = MediaChain()
     
@@ -68,6 +69,7 @@ class Danmu(_PluginBase):
             self._cron = config.get("cron", "0 0 1 1 *")
             self._onlyFromBili = config.get("onlyFromBili", False)
             self._useTmdbID = config.get("useTmdbID", True)
+            self._convertT2s = config.get("convertT2s", True)
         if self._enabled:
             logger.info("弹幕加载插件已启用")
             
@@ -164,6 +166,22 @@ class Danmu(_PluginBase):
                                         'props': {
                                             'model': 'useTmdbID',
                                             'label': '使用TMDB ID作为预备匹配方案，当无法匹配文件hash时尝试使用TMDB ID',
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'convertT2S',
+                                            'label': '繁体转中文',
                                         }
                                     }
                                 ]
@@ -336,7 +354,8 @@ class Danmu(_PluginBase):
             "cron": "0 0 1 1 *",
             "path": "",
             "onlyFromBili": False,
-            "useTmdbID": True
+            "useTmdbID": True,
+            "convertT2S": True
         }
 
     def get_page(self) -> List[dict]:
@@ -369,6 +388,7 @@ class Danmu(_PluginBase):
                 self._duration,
                 self._onlyFromBili,
                 self._useTmdbID,
+                self._convertT2S,
                 tmdb_id,
                 episode
             )
