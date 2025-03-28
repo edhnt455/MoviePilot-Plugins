@@ -288,6 +288,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         styles = f'\\move({width}, {initial_y}, {-len(text)*fontsize}, {initial_y})'
                     elif pos == 4:  # 底部弹幕
                         track_id = cls.find_non_overlapping_track(bottom_tracks, timeline, max_tracks)
+                        subtitle_area_height = int(subtitle_area_height)
                         # 如果启用避开字幕区域且是底部弹幕，检查是否会遮挡字幕
                         if subtitle_area_height != 0:
                             bottom_position = height - 50 - (track_id - 1) * fontsize
