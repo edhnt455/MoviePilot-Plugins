@@ -18,7 +18,7 @@ from app.plugins.danmu import danmu_generator as generator
 
 class Danmu(_PluginBase):
     # 插件名称
-    plugin_name = "弹幕刮削2"
+    plugin_name = "弹幕刮削"
     # 插件描述
     plugin_desc = "使用弹弹play平台生成弹幕的字幕文件，实现弹幕播放。"
     # 插件图标
@@ -32,7 +32,7 @@ class Danmu(_PluginBase):
     # 作者主页
     author_url = "https://github.com/edhnt455"
     # 插件配置项ID前缀
-    plugin_config_prefix = "danmu2_"
+    plugin_config_prefix = "danmu_"
     # 加载顺序
     plugin_order = 1
     # 可使用的用户级别
