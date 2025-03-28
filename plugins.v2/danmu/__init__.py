@@ -28,9 +28,9 @@ class Danmu(_PluginBase):
     # 插件版本
     plugin_version = "1.1.11"
     # 插件作者
-    plugin_author = "hankun"
+    plugin_author = "edhnt455"
     # 作者主页
-    author_url = "https://github.com/hankunyu"
+    author_url = "https://github.com/edhnt455"
     # 插件配置项ID前缀
     plugin_config_prefix = "danmu_"
     # 加载顺序

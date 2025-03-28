@@ -1,47 +1,14 @@
 {
-    "Discord": {
-        "name": "Discord 消息推送",
-        "description": "添加discord消息推送",
-        "version": "1.5.9",
-        "icon": "https://raw.githubusercontent.com/HankunYu/MoviePilot-Plugins/main/icons/discord.png",
-        "color": "#3B5E8E",
-        "author": "hankun",
-        "level": 1,
-        "history":{
-            "v1.5.8": "增加对v2的支持，OpenAI暂时无法使用"
-        },
-        "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyNe4GKw15qXHWAYBhHDlUDxM7MfrdmstwRoTtn+PNK9uvpsZip1/R6azzJi4hHLsEOvVLyfjjaEVDyZrJVGTxC+Fj+6JFrq4LnwB0CHlbXAN+UkMk3uD/srRx3eOVSZuqoCDplsX98DUim5Vx/xzyoRSwbWqMJvYsIawaKO9yZyA7ErjmyNOk1jduy1FYLISzyICtz0ubYsohzUZxbcZgqb+qBeECv0SofSMM+luvIHiqTPPMRKmjD6WufGerwm7r9r26coG5CvYgOX+jOJITIpAqXkAqqXNNoVCuTRazxF/OJFjbTsJLO1WnyIr6qB6oQW/7XgLk0Ot5M1Jx2JW/QIDAQAB"
-
-    },
-    "Bangumi": {
-        "name": "Bangumi 同步",
-        "description": "动漫资源引用Bangumi评分，同步订阅/库存番剧到Bangumi",
-        "version": "1.0.15",
-        "icon": "https://raw.githubusercontent.com/HankunYu/MoviePilot-Plugins/main/icons/bangumi.jpg",
-        "color": "#5378A4",
-        "author": "hankun",
-        "level": 99,
-        "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyNe4GKw15qXHWAYBhHDlUDxM7MfrdmstwRoTtn+PNK9uvpsZip1/R6azzJi4hHLsEOvVLyfjjaEVDyZrJVGTxC+Fj+6JFrq4LnwB0CHlbXAN+UkMk3uD/srRx3eOVSZuqoCDplsX98DUim5Vx/xzyoRSwbWqMJvYsIawaKO9yZyA7ErjmyNOk1jduy1FYLISzyICtz0ubYsohzUZxbcZgqb+qBeECv0SofSMM+luvIHiqTPPMRKmjD6WufGerwm7r9r26coG5CvYgOX+jOJITIpAqXkAqqXNNoVCuTRazxF/OJFjbTsJLO1WnyIr6qB6oQW/7XgLk0Ot5M1Jx2JW/QIDAQAB"
-
-    },
-    "BDRemuxer": {
-        "name": "BD Remuxer",
-        "description": "使用ffmpeg自动提取BDMV文件夹中的视频流和音频流，合并为MKV文件。低性能设备不推荐使用",
-        "version": "1.1.0",
-        "icon": "",
-        "color": "#5378A4",
-        "author": "hankun",
-        "level": 1
-    },
     "Danmu": {
         "name": "弹幕刮削",
         "description": "使用弹弹play平台生成弹幕的字幕文件，实现弹幕播放。",
-        "version": "1.1.11",
+        "version": "1.1.12",
         "icon": "https://raw.githubusercontent.com/HankunYu/MoviePilot-Plugins/main/icons/danmu.png",
         "color": "#3B5E8E",
-        "author": "hankun",
+        "author": "edhnt455",
         "level": 1,
         "history": {
+            "v1.1.12": "新增简繁转换",
             "v1.1.11": "修复弹幕获取过滤错误",
             "v1.1.10": "使用TMDB ID作为预备匹配方案，当无法匹配文件hash时尝试使用TMDB ID。",
             "v1.1.8": "增加了中转服务器，恢复了对弹弹的访问以及缓存。修复透明度问题。增加了弹幕过滤选项。",
@@ -60,25 +27,5 @@
             "v1.0.1": "修复ffmpeg有时候解码错误。",
             "v1.0.0": "基本功能实现，暂时不支持srt字幕。"
           }
-    },
-    "Test":{
-        "name": "测试",
-        "description": "测试",
-        "version": "1.0.0",
-        "icon": "",
-        "color": "#3B5E8E",
-        "author": "hankun",
-        "level": 99,
-        "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyNe4GKw15qXHWAYBhHDlUDxM7MfrdmstwRoTtn+PNK9uvpsZip1/R6azzJi4hHLsEOvVLyfjjaEVDyZrJVGTxC+Fj+6JFrq4LnwB0CHlbXAN+UkMk3uD/srRx3eOVSZuqoCDplsX98DUim5Vx/xzyoRSwbWqMJvYsIawaKO9yZyA7ErjmyNOk1jduy1FYLISzyICtz0ubYsohzUZxbcZgqb+qBeECv0SofSMM+luvIHiqTPPMRKmjD6WufGerwm7r9r26coG5CvYgOX+jOJITIpAqXkAqqXNNoVCuTRazxF/OJFjbTsJLO1WnyIr6qB6oQW/7XgLk0Ot5M1Jx2JW/QIDAQAB"
-    },
-    "IdentifierHelper":{
-        "name": "自定义识别词助手",
-        "description": "帮助管理自定义识别词",
-        "version": "1.0.0",
-        "icon": "https://raw.githubusercontent.com/HankunYu/MoviePilot-Plugins/main/icons/Identifier.png",
-        "color": "#3B5E8E",
-        "author": "hankun",
-        "level": 99,
-        "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyNe4GKw15qXHWAYBhHDlUDxM7MfrdmstwRoTtn+PNK9uvpsZip1/R6azzJi4hHLsEOvVLyfjjaEVDyZrJVGTxC+Fj+6JFrq4LnwB0CHlbXAN+UkMk3uD/srRx3eOVSZuqoCDplsX98DUim5Vx/xzyoRSwbWqMJvYsIawaKO9yZyA7ErjmyNOk1jduy1FYLISzyICtz0ubYsohzUZxbcZgqb+qBeECv0SofSMM+luvIHiqTPPMRKmjD6WufGerwm7r9r26coG5CvYgOX+jOJITIpAqXkAqqXNNoVCuTRazxF/OJFjbTsJLO1WnyIr6qB6oQW/7XgLk0Ot5M1Jx2JW/QIDAQAB"
     }
 }
