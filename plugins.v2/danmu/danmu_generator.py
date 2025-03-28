@@ -240,24 +240,34 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     @classmethod
     def convert_comments_to_ass(cls, comments: List[Dict], output_file: str, width: int, height: int, fontface: str,
                                 fontsize: float, alpha: float, duration: float, convert_t_2_s: bool):
+        logger.info(f"转换弹幕：尝试优化弹幕播放卡顿")
         styleid = 'Danmu'
-        max_tracks = int(height) // int(fontsize)
+        # 增加轨道间距 (原基础上增加50%)
+        track_spacing = int(fontsize * 1.5)
+        max_tracks = int(height) // track_spacing
+
+        # 限制最大弹幕数量
+        max_comments = 1000
+        if len(comments) > max_comments:
+            comments = comments[:max_comments]
+            logger.info(f"弹幕数量过多，限制为{max_comments}条")
+
         scrolling_tracks = {}
         top_tracks = {}
         bottom_tracks = {}
 
         logger.info(f"{output_file} - 共匹配到{len(comments)}条弹幕。")
-        
+
         with open(output_file, 'w', encoding='utf-8-sig') as f:
             cls.write_ass_head(f, width, height, fontface, fontsize, alpha, styleid)
-            
+
             for comment in comments:
                 try:
                     p = comment.get('p', '').split(',')
                     if len(p) < 3:
                         logger.warning(f"弹幕数据格式不正确: {comment}")
                         continue
-                    
+
                     timeline = float(p[0])
                     pos = int(p[1])
                     color = int(p[2])
@@ -265,43 +275,40 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     # 繁体转简体
                     if convert_t_2_s:
                         text = cls.convert_traditional_to_simplified(text)
-                    user = str(p[3])
 
                     if not text:
                         continue
-                        
+
                     start_time = cls.convert_timestamp(timeline)
                     end_time = cls.convert_timestamp(timeline + duration)
-                    
-                    gap = 1
-                    text_width = len(text) * fontsize * 0.6
-                    velocity = (width + text_width) / duration
-                    leave_time = text_width / velocity + gap
 
+                    # 简化移动计算
                     color_hex = f'&H{color & 0xFFFFFF:06X}'
                     styles = ''
-                    
+
                     if pos == 1:  # 滚动弹幕
                         track_id = cls.find_non_overlapping_track(scrolling_tracks, timeline, max_tracks)
-                        scrolling_tracks[track_id] = timeline + leave_time
-                        initial_y = (track_id - 1) * fontsize + 10
-                        styles = f'\\move({width}, {initial_y}, {-len(text)*fontsize}, {initial_y})'
+                        scrolling_tracks[track_id] = timeline + duration
+                        initial_y = (track_id - 1) * track_spacing + 10
+                        # 使用更简单的移动方式
+                        styles = f'\\move({width}, {initial_y}, {-width}, {initial_y})'
                     elif pos == 4:  # 底部弹幕
                         track_id = cls.find_non_overlapping_track(bottom_tracks, timeline, max_tracks)
                         bottom_tracks[track_id] = timeline + duration
-                        styles = f'\\an2\\pos({width/2}, {height - 50 - (track_id - 1) * fontsize})'
+                        styles = f'\\an2\\pos({width // 2}, {height - 50 - (track_id - 1) * track_spacing})'
                     elif pos == 5:  # 顶部弹幕
                         track_id = cls.find_non_overlapping_track(top_tracks, timeline, max_tracks)
                         top_tracks[track_id] = timeline + duration
-                        styles = f'\\an8\\pos({width/2}, {50 + (track_id - 1) * fontsize})'
+                        styles = f'\\an8\\pos({width // 2}, {50 + (track_id - 1) * track_spacing})'
                     else:
                         styles = f'\\move(0, 0, {width}, 0)'
 
+                    # 简化样式输出
                     f.write(f'Dialogue: 0,{start_time},{end_time},{styleid},,0,0,0,,{{\\c{color_hex}{styles}}}{text}\n')
                 except Exception as e:
-                    logger.error(f"处理弹幕数据失败: {e}, 弹幕数据: {comment}")
+                    logger.error(f"处理弹幕数据失败: {e}")
                     continue
-            
+
             logger.info('弹幕生成成功 - ' + output_file)
 
 class SubtitleProcessor:
