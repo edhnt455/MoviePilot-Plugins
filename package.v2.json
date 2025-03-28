@@ -2,12 +2,13 @@
     "Danmu": {
         "name": "弹幕刮削",
         "description": "使用弹弹play平台生成弹幕的字幕文件，实现弹幕播放。",
-        "version": "1.1.14",
+        "version": "1.1.15",
         "icon": "https://raw.githubusercontent.com/HankunYu/MoviePilot-Plugins/main/icons/danmu.png",
         "color": "#3B5E8E",
         "author": "edhnt455",
         "level": 1,
         "history": {
+            "v1.1.15": "尝试优化弹幕播放卡顿",
             "v1.1.14": "修复我傻逼打错变量名",
             "v1.1.13": "新增简繁转换按钮",
             "v1.1.12": "新增简繁转换",
