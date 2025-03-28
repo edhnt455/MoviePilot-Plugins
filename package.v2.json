@@ -2,12 +2,13 @@
     "Danmu": {
         "name": "弹幕刮削",
         "description": "使用弹弹play平台生成弹幕的字幕文件，实现弹幕播放。",
-        "version": "1.1.12",
+        "version": "1.1.13",
         "icon": "https://raw.githubusercontent.com/HankunYu/MoviePilot-Plugins/main/icons/danmu.png",
         "color": "#3B5E8E",
         "author": "edhnt455",
         "level": 1,
         "history": {
+            "v1.1.13": "新增简繁转换按钮",
             "v1.1.12": "新增简繁转换",
             "v1.1.11": "修复弹幕获取过滤错误",
             "v1.1.10": "使用TMDB ID作为预备匹配方案，当无法匹配文件hash时尝试使用TMDB ID。",
