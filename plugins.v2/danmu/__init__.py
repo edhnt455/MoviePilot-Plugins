@@ -26,7 +26,7 @@ class Danmu(_PluginBase):
     # 主题色
     plugin_color = "#3B5E8E"
     # 插件版本
-    plugin_version = "1.1.13"
+    plugin_version = "1.1.14"
     # 插件作者
     plugin_author = "edhnt455"
     # 作者主页
@@ -52,7 +52,7 @@ class Danmu(_PluginBase):
     _max_threads = 10
     _onlyFromBili = False
     _useTmdbID = True
-    _convertT2s = True
+    _convertT2S = True
     
     media_chain = MediaChain()
     
@@ -69,7 +69,7 @@ class Danmu(_PluginBase):
             self._cron = config.get("cron", "0 0 1 1 *")
             self._onlyFromBili = config.get("onlyFromBili", False)
             self._useTmdbID = config.get("useTmdbID", True)
-            self._convertT2s = config.get("convertT2s", True)
+            self._convertT2S = config.get("convertT2S", True)
         if self._enabled:
             logger.info("弹幕加载插件已启用")
             
