@@ -760,7 +760,10 @@ class Danmu(_PluginBase):
                 'X-Emby-Token': series['emby_apikey'],
                 'X-Emby-Authorization': f'MediaBrowser Client="MoviePilot", Device="MoviePilot", DeviceId="MoviePilot", Version="1.0.0"'
             }
-            params = {'UserId': series['emby_user']}
+            params = {
+                'UserId': series['emby_user'],
+                'Fields': 'Path,MediaPath,MediaSources'
+            }
 
             logger.info(f"请求剧集信息: {url}")
             response = RequestUtils(headers=headers).get_res(url, params=params)
@@ -776,6 +779,8 @@ class Danmu(_PluginBase):
             logger.info(f"获取到剧集 {series['series_name']} 的 {len(episodes)} 个集数")
 
             for episode in episodes:
+                logger.info(
+                    f"集信息: {episode}")
                 episode_name = episode.get('Name', '')
                 episode_number = episode.get('IndexNumber', 0)
                 episode_id = episode.get('Id', '')
@@ -798,14 +803,8 @@ class Danmu(_PluginBase):
                 # 获取视频文件路径
                 media_path = episode.get('Path')
                 if not media_path:
-                    # 尝试从其他字段获取路径
-                    media_path = episode.get('MediaPath')
-                    if not media_path:
-                        logger.warning(
-                            f"未找到视频文件路径: {series['series_name']} 第 {episode_number} 集 (ID: {episode_id})")
-                        # 输出完整的episode信息以便调试
-                        logger.debug(f"集数完整信息: {json.dumps(episode, ensure_ascii=False, indent=2)}")
-                        continue
+                    logger.warning(f"未找到视频文件路径: {series['series_name']} 第 {episode_number} 集 (ID: {episode_id})")
+                    continue
 
                 if not os.path.exists(media_path):
                     logger.warning(f"视频文件不存在: {media_path}")
