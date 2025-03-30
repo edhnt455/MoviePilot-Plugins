@@ -613,7 +613,6 @@ class Danmu(_PluginBase):
             # 获取最近30天的观看记录
             end_date = datetime.now()
             start_date = end_date - timedelta(days=30)
-            logger.info(f"获取最近30天的观看记录，时间范围：{start_date} 至 {end_date}")
 
             emby_servers = self.mediaserver_helper.get_services(name_filters=self._mediaservers, type_filter="emby")
             if not emby_servers:
@@ -622,7 +621,6 @@ class Danmu(_PluginBase):
 
             watching_series = []
             for emby_name, emby_server in emby_servers.items():
-                logger.info(f"开始处理媒体服务器 {emby_name}")
                 self._EMBY_USER = emby_server.instance.get_user()
                 self._EMBY_APIKEY = emby_server.config.config.get("apikey")
                 self._EMBY_HOST = emby_server.config.config.get("host")
@@ -647,40 +645,38 @@ class Danmu(_PluginBase):
                     'SortBy': 'DatePlayed',
                     'SortOrder': 'Descending',
                     'IncludeItemTypes': 'Episode',
-                    'Filters': 'IsResumable'
+                    'Filters': 'IsResumable',
+                    'MinDateLastSaved': start_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    'MaxDateLastSaved': end_date.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
-
-                logger.info(f"请求URL: {url}")
-                logger.info(f"请求头: {headers}")
-                logger.info(f"请求参数: {params}")
 
                 response = RequestUtils(headers=headers).get_res(url, params=params)
 
                 if response and response.status_code == 200:
                     items = response.json().get('Items', [])
-                    logger.info(f"获取到 {len(items)} 条观看记录")
 
                     for item in items:
                         series_name = item.get('SeriesName', '')
                         episode_name = item.get('Name', '')
-                        logger.info(f"处理剧集: {series_name} - {episode_name}")
 
                         # 检查播放进度
                         user_data = item.get('UserData', {})
                         played_percentage = user_data.get('PlayedPercentage', 0)
                         played = user_data.get('Played', False)
-
-                        logger.info(
-                            f"剧集 {series_name} - {episode_name} 播放进度: {played_percentage}%, 是否已播放: {played}")
+                        last_played = user_data.get('LastPlayedDate')
+                        
+                        # 如果最后播放时间不在30天内，跳过
+                        if last_played:
+                            last_played_date = datetime.fromisoformat(last_played.replace('Z', '+00:00'))
+                            if last_played_date < start_date:
+                                continue
 
                         # 如果已标记为已播放，跳过
                         if played:
-                            logger.info(f"跳过 {series_name} - {episode_name}: 已标记为已播放")
                             continue
 
                         series_id = item.get('SeriesId')
                         if not series_id:
-                            logger.info(f"跳过 {series_name} - {episode_name}: 无剧集ID")
                             continue
 
                         # 获取剧集信息
@@ -688,7 +684,6 @@ class Danmu(_PluginBase):
                         series_response = RequestUtils(headers=headers).get_res(series_url,
                                                                                 params={'UserId': self._EMBY_USER})
                         if not series_response or series_response.status_code != 200:
-                            logger.info(f"跳过 {series_name}: 获取剧集信息失败")
                             continue
 
                         series_info = series_response.json()
@@ -696,25 +691,19 @@ class Danmu(_PluginBase):
                         watched_episodes = sum(1 for ep in series_info.get('Items', [])
                                                if ep.get('UserData', {}).get('PlayCount', 0) > 0)
 
-                        logger.info(f"剧集 {series_name} 总集数: {total_episodes}, 已观看: {watched_episodes}")
-
                         if watched_episodes < total_episodes:
                             watching_series.append({
                                 'series_id': series_id,
                                 'series_name': series_name,
                                 'total_episodes': total_episodes,
                                 'watched_episodes': watched_episodes,
-                                'last_played': datetime.now(),  # 使用当前时间作为最后播放时间
+                                'last_played': last_played_date if last_played else datetime.now(),
                                 'emby_name': emby_name,
                                 'emby_host': self._EMBY_HOST,
                                 'emby_user': self._EMBY_USER,
                                 'emby_apikey': self._EMBY_APIKEY
                             })
-                            logger.info(f"添加剧集 {series_name} 到待处理列表")
-                        else:
-                            logger.info(f"跳过 {series_name}: 已全部观看")
 
-            logger.info(f"最终获取到 {len(watching_series)} 个需要处理的剧集")
             return watching_series
 
         except Exception as e:
@@ -737,23 +726,17 @@ class Danmu(_PluginBase):
             logger.warning("未设置刮削路径，跳过Emby弹幕更新")
             return
 
-        logger.info("开始更新Emby观看记录弹幕")
         watching_series = self.get_emby_watching_series()
 
         if not watching_series:
-            logger.info("没有需要更新弹幕的剧集")
             return
 
         # 获取所有需要监控的路径
         monitor_paths = [path.strip() for path in self._path.split('\n') if path.strip()]
-        logger.info(f"监控路径列表: {monitor_paths}")
 
         # 用于存储所有线程
         threads = []
         for series in watching_series:
-            logger.info(f"正在处理剧集: {series['series_name']} "
-                        f"(已观看: {series['watched_episodes']}/{series['total_episodes']})")
-
             # 获取剧集所有集数信息
             url = f"{series['emby_host']}emby/Shows/{series['series_id']}/Episodes"
             headers = {
@@ -765,7 +748,6 @@ class Danmu(_PluginBase):
                 'Fields': 'Path,MediaPath,MediaSources'
             }
 
-            logger.info(f"请求剧集信息: {url}")
             response = RequestUtils(headers=headers).get_res(url, params=params)
             if not response:
                 logger.error(f"获取剧集 {series['series_name']} 信息失败: 请求无响应")
@@ -776,16 +758,11 @@ class Danmu(_PluginBase):
                 continue
 
             episodes = response.json().get('Items', [])
-            logger.info(f"获取到剧集 {series['series_name']} 的 {len(episodes)} 个集数")
 
             for episode in episodes:
-                logger.info(
-                    f"集信息: {episode}")
                 episode_name = episode.get('Name', '')
                 episode_number = episode.get('IndexNumber', 0)
                 episode_id = episode.get('Id', '')
-                logger.info(
-                    f"处理集数: {series['series_name']} 第 {episode_number} 集 - {episode_name} (ID: {episode_id})")
 
                 # 检查播放状态
                 user_data = episode.get('UserData', {})
@@ -793,11 +770,8 @@ class Danmu(_PluginBase):
                 played_percentage = user_data.get('PlayedPercentage', 0)
                 played = user_data.get('Played', False)
 
-                logger.info(f"播放状态: 播放次数={play_count}, 播放进度={played_percentage}%, 是否已播放={played}")
-
                 # 跳过已观看的集数
                 if play_count > 0:
-                    logger.info(f"跳过已观看的集数: {series['series_name']} 第 {episode_number} 集")
                     continue
 
                 # 获取视频文件路径
@@ -808,17 +782,6 @@ class Danmu(_PluginBase):
 
                 if not os.path.exists(media_path):
                     logger.warning(f"视频文件不存在: {media_path}")
-                    # 尝试查找可能的文件路径
-                    possible_paths = [
-                        media_path,
-                        media_path.replace('\\', '/'),
-                        os.path.join(os.path.dirname(media_path), os.path.basename(media_path)),
-                        os.path.join(os.path.dirname(media_path),
-                                     f"{series['series_name']} S01E{episode_number:02d}.mkv"),
-                        os.path.join(os.path.dirname(media_path),
-                                     f"{series['series_name']} S01E{episode_number:02d}.mp4")
-                    ]
-                    logger.info(f"尝试查找的文件路径: {possible_paths}")
                     continue
 
                 # 检查文件是否在监控路径中
@@ -826,34 +789,26 @@ class Danmu(_PluginBase):
                 for monitor_path in monitor_paths:
                     if os.path.abspath(media_path).startswith(os.path.abspath(monitor_path)):
                         is_monitored = True
-                        logger.info(f"文件在监控路径中: {monitor_path}")
                         break
 
                 if not is_monitored:
-                    logger.info(f"跳过不在监控路径中的文件: {media_path}")
                     continue
 
-                logger.info(f"开始生成弹幕文件: {media_path}")
                 thread = threading.Thread(
                     target=self.generate_danmu,
                     args=(media_path,)
                 )
                 thread.start()
                 threads.append(thread)
-                logger.info(f"当前运行中的线程数: {len(threads)}")
 
                 # 如果线程数达到最大限制，等待一个线程完成
                 if len(threads) >= self._max_threads:
-                    logger.info(f"达到最大线程数限制 ({self._max_threads})，等待一个线程完成")
                     threads[0].join()
                     threads.pop(0)
-                    logger.info(f"等待完成，当前运行中的线程数: {len(threads)}")
 
         # 等待所有剩余线程完成
         if threads:
-            logger.info(f"等待所有 {len(threads)} 个线程完成")
             for thread in threads:
                 thread.join()
-            logger.info("所有线程已完成")
 
         logger.info("Emby观看记录弹幕更新完成")
