@@ -9,6 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.chain.media import MediaChain
 from app.core.metainfo import MetaInfo
 from app.utils.http import RequestUtils
+from app.helper.mediaserver import MediaServerHelper
 from datetime import datetime, timedelta
 import json
 
@@ -59,14 +60,18 @@ class Danmu(_PluginBase):
     _subtitle_area_height = 150
 
     # Emby配置
-    _emby_url = ""
-    _emby_api_key = ""
-    _emby_user_id = ""
+    _mediaservers = None
+    mediaserver_helper = None
+    _EMBY_HOST = None
+    _EMBY_USER = None
+    _EMBY_APIKEY = None
     _emby_update_cron = "0 0 * * *"  # 默认每天凌晨执行
 
     media_chain = MediaChain()
 
     def init_plugin(self, config: dict = None):
+        self.mediaserver_helper = MediaServerHelper()
+        
         if config:
             self._enabled = config.get("enabled", False)
             self._width = config.get("width", 1920)
@@ -83,9 +88,7 @@ class Danmu(_PluginBase):
             self._subtitle_area_height = config.get("subtitle_area_height", 150)
 
             # Emby配置
-            self._emby_url = config.get("emby_url", "")
-            self._emby_api_key = config.get("emby_api_key", "")
-            self._emby_user_id = config.get("emby_user_id", "")
+            self._mediaservers = config.get("mediaservers", [])
             self._emby_update_cron = config.get("emby_update_cron", "0 0 * * *")
 
         if self._enabled:
@@ -115,7 +118,7 @@ class Danmu(_PluginBase):
                     "func": self.generate_danmu_global,
                     "kwargs": {}
                 })
-            if self._emby_url and self._emby_api_key and self._emby_user_id:
+            if self._mediaservers:
                 services.append({
                     "id": "DanmuEmbyUpdate",
                     "name": "Emby观看记录弹幕更新服务",
@@ -137,6 +140,10 @@ class Danmu(_PluginBase):
         """
         拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
         """
+        # 获取Emby服务器列表
+        emby_servers = self.mediaserver_helper.get_services(type_filter="emby")
+        emby_options = [{"title": name, "value": name} for name in emby_servers.keys()]
+
         return [
             {
                 'component': 'VForm',
@@ -230,7 +237,6 @@ class Danmu(_PluginBase):
                                             'model': 'width',
                                             'label': '宽度，默认1920',
                                             'type': 'number',
-
                                         }
                                     }
                                 ]
@@ -247,7 +253,6 @@ class Danmu(_PluginBase):
                                             'model': 'height',
                                             'label': '高度，默认1080',
                                             'type': 'number',
-
                                         }
                                     }
                                 ]
@@ -269,7 +274,6 @@ class Danmu(_PluginBase):
                                             'model': 'fontsize',
                                             'label': '字体大小，默认50',
                                             'type': 'number',
-
                                         }
                                     }
                                 ]
@@ -286,7 +290,6 @@ class Danmu(_PluginBase):
                                             'model': 'alpha',
                                             'label': '弹幕透明度，默认0.8',
                                             'type': 'number',
-
                                         }
                                     }
                                 ]
@@ -308,7 +311,6 @@ class Danmu(_PluginBase):
                                             'model': 'duration',
                                             'label': '弹幕持续时间 默认10秒',
                                             'type': 'number',
-
                                         }
                                     }
                                 ]
@@ -325,7 +327,6 @@ class Danmu(_PluginBase):
                                             'model': 'cron',
                                             'label': '取消定期刮削，需要全局刮削请去 设置->服务 手动启动',
                                             'type': 'text',
-
                                         }
                                     }
                                 ]
@@ -347,7 +348,6 @@ class Danmu(_PluginBase):
                                             'model': 'subtitle_area_height',
                                             'label': '底部字幕防遮挡范围，默认150，为0不开启防遮挡',
                                             'type': 'number',
-
                                         }
                                     }
                                 ]
@@ -408,49 +408,14 @@ class Danmu(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VSelect',
                                         'props': {
-                                            'model': 'emby_url',
-                                            'label': 'Emby服务器地址',
-                                            'placeholder': '例如：http://localhost:8096',
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'emby_api_key',
-                                            'label': 'Emby API Key',
-                                            'type': 'password',
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'emby_user_id',
-                                            'label': 'Emby用户ID',
+                                            'model': 'mediaservers',
+                                            'label': 'Emby服务器',
+                                            'items': emby_options,
+                                            'multiple': True,
+                                            'chips': True,
+                                            'placeholder': '请选择Emby服务器',
                                         }
                                     }
                                 ]
@@ -485,7 +450,7 @@ class Danmu(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'flat',
-                                            'text': 'Emby配置说明：\n1. 需要填写Emby服务器地址、API Key和用户ID\n2. 插件会自动获取最近观看的剧集信息\n3. 只更新未完成观看的剧集弹幕\n4. 一个月内未观看的剧集不会更新弹幕',
+                                            'text': 'Emby配置说明：\n1. 需要选择Emby服务器\n2. 插件会自动获取最近观看的剧集信息\n3. 只更新未完成观看的剧集弹幕\n4. 一个月内未观看的剧集不会更新弹幕',
                                         }
                                     }
                                 ]
@@ -507,9 +472,7 @@ class Danmu(_PluginBase):
             "useTmdbID": True,
             "convertT2S": True,
             "subtitle_area_height": 150,
-            "emby_url": "",
-            "emby_api_key": "",
-            "emby_user_id": "",
+            "mediaservers": [],
             "emby_update_cron": "0 0 * * *"
         }
 
@@ -652,88 +615,107 @@ class Danmu(_PluginBase):
             start_date = end_date - timedelta(days=30)
             logger.info(f"获取最近30天的观看记录，时间范围：{start_date} 至 {end_date}")
 
-            # 获取用户观看记录
-            url = f"{self._emby_url}/emby/Users/{self._emby_user_id}/Items"
-            headers = {
-                'X-Emby-Token': self._emby_api_key,
-                'X-Emby-Authorization': f'MediaBrowser Client="MoviePilot", Device="MoviePilot", DeviceId="MoviePilot", Version="1.0.0"'
-            }
-            params = {
-                'Recursive': 'true',
-                'Fields': 'BasicSyncInfo,UserData',
-                'ImageTypeLimit': 1,
-                'EnableImageTypes': 'Primary',
-                'StartIndex': 0,
-                'Limit': 100,
-                'SortBy': 'DatePlayed',
-                'SortOrder': 'Descending',
-                'IncludeItemTypes': 'Episode',
-                'Filters': 'IsResumable'
-            }
+            emby_servers = self.mediaserver_helper.get_services(name_filters=self._mediaservers, type_filter="emby")
+            if not emby_servers:
+                logger.error("未配置Emby媒体服务器")
+                return []
 
-            logger.info(f"请求URL: {url}")
-            logger.info(f"请求头: {headers}")
-            logger.info(f"请求参数: {params}")
+            watching_series = []
+            for emby_name, emby_server in emby_servers.items():
+                logger.info(f"开始处理媒体服务器 {emby_name}")
+                self._EMBY_USER = emby_server.instance.get_user()
+                self._EMBY_APIKEY = emby_server.config.config.get("apikey")
+                self._EMBY_HOST = emby_server.config.config.get("host")
+                if not self._EMBY_HOST.endswith("/"):
+                    self._EMBY_HOST += "/"
+                if not self._EMBY_HOST.startswith("http"):
+                    self._EMBY_HOST = "http://" + self._EMBY_HOST
 
-            response = RequestUtils(headers=headers).get_res(url, params=params)
+                # 获取用户观看记录
+                url = f"{self._EMBY_HOST}emby/Users/{self._EMBY_USER}/Items"
+                headers = {
+                    'X-Emby-Token': self._EMBY_APIKEY,
+                    'X-Emby-Authorization': f'MediaBrowser Client="MoviePilot", Device="MoviePilot", DeviceId="MoviePilot", Version="1.0.0"'
+                }
+                params = {
+                    'Recursive': 'true',
+                    'Fields': 'BasicSyncInfo,UserData',
+                    'ImageTypeLimit': 1,
+                    'EnableImageTypes': 'Primary',
+                    'StartIndex': 0,
+                    'Limit': 100,
+                    'SortBy': 'DatePlayed',
+                    'SortOrder': 'Descending',
+                    'IncludeItemTypes': 'Episode',
+                    'Filters': 'IsResumable'
+                }
 
-            if response and response.status_code == 200:
-                items = response.json().get('Items', [])
-                logger.info(f"获取到 {len(items)} 条观看记录")
-                watching_series = []
+                logger.info(f"请求URL: {url}")
+                logger.info(f"请求头: {headers}")
+                logger.info(f"请求参数: {params}")
 
-                for item in items:
-                    series_name = item.get('SeriesName', '')
-                    episode_name = item.get('Name', '')
-                    logger.info(f"处理剧集: {series_name} - {episode_name}")
+                response = RequestUtils(headers=headers).get_res(url, params=params)
 
-                    # 检查播放进度
-                    user_data = item.get('UserData', {})
-                    played_percentage = user_data.get('PlayedPercentage', 0)
-                    played = user_data.get('Played', False)
+                if response and response.status_code == 200:
+                    items = response.json().get('Items', [])
+                    logger.info(f"获取到 {len(items)} 条观看记录")
 
-                    logger.info(
-                        f"剧集 {series_name} - {episode_name} 播放进度: {played_percentage}%, 是否已播放: {played}")
+                    for item in items:
+                        series_name = item.get('SeriesName', '')
+                        episode_name = item.get('Name', '')
+                        logger.info(f"处理剧集: {series_name} - {episode_name}")
 
-                    # 如果已标记为已播放，跳过
-                    if played:
-                        logger.info(f"跳过 {series_name} - {episode_name}: 已标记为已播放")
-                        continue
+                        # 检查播放进度
+                        user_data = item.get('UserData', {})
+                        played_percentage = user_data.get('PlayedPercentage', 0)
+                        played = user_data.get('Played', False)
 
-                    series_id = item.get('SeriesId')
-                    if not series_id:
-                        logger.info(f"跳过 {series_name} - {episode_name}: 无剧集ID")
-                        continue
+                        logger.info(
+                            f"剧集 {series_name} - {episode_name} 播放进度: {played_percentage}%, 是否已播放: {played}")
 
-                    # 获取剧集信息
-                    series_url = f"{self._emby_url}/emby/Shows/{series_id}/Episodes"
-                    series_response = RequestUtils(headers=headers).get_res(series_url,
-                                                                            params={'UserId': self._emby_user_id})
-                    if not series_response or series_response.status_code != 200:
-                        logger.info(f"跳过 {series_name}: 获取剧集信息失败")
-                        continue
+                        # 如果已标记为已播放，跳过
+                        if played:
+                            logger.info(f"跳过 {series_name} - {episode_name}: 已标记为已播放")
+                            continue
 
-                    series_info = series_response.json()
-                    total_episodes = len(series_info.get('Items', []))
-                    watched_episodes = sum(1 for ep in series_info.get('Items', [])
-                                           if ep.get('UserData', {}).get('PlayCount', 0) > 0)
+                        series_id = item.get('SeriesId')
+                        if not series_id:
+                            logger.info(f"跳过 {series_name} - {episode_name}: 无剧集ID")
+                            continue
 
-                    logger.info(f"剧集 {series_name} 总集数: {total_episodes}, 已观看: {watched_episodes}")
+                        # 获取剧集信息
+                        series_url = f"{self._EMBY_HOST}emby/Shows/{series_id}/Episodes"
+                        series_response = RequestUtils(headers=headers).get_res(series_url,
+                                                                                params={'UserId': self._EMBY_USER})
+                        if not series_response or series_response.status_code != 200:
+                            logger.info(f"跳过 {series_name}: 获取剧集信息失败")
+                            continue
 
-                    if watched_episodes < total_episodes:
-                        watching_series.append({
-                            'series_id': series_id,
-                            'series_name': series_name,
-                            'total_episodes': total_episodes,
-                            'watched_episodes': watched_episodes,
-                            'last_played': datetime.now()  # 使用当前时间作为最后播放时间
-                        })
-                        logger.info(f"添加剧集 {series_name} 到待处理列表")
-                    else:
-                        logger.info(f"跳过 {series_name}: 已全部观看")
+                        series_info = series_response.json()
+                        total_episodes = len(series_info.get('Items', []))
+                        watched_episodes = sum(1 for ep in series_info.get('Items', [])
+                                               if ep.get('UserData', {}).get('PlayCount', 0) > 0)
 
-                logger.info(f"最终获取到 {len(watching_series)} 个需要处理的剧集")
-                return watching_series
+                        logger.info(f"剧集 {series_name} 总集数: {total_episodes}, 已观看: {watched_episodes}")
+
+                        if watched_episodes < total_episodes:
+                            watching_series.append({
+                                'series_id': series_id,
+                                'series_name': series_name,
+                                'total_episodes': total_episodes,
+                                'watched_episodes': watched_episodes,
+                                'last_played': datetime.now(),  # 使用当前时间作为最后播放时间
+                                'emby_name': emby_name,
+                                'emby_host': self._EMBY_HOST,
+                                'emby_user': self._EMBY_USER,
+                                'emby_apikey': self._EMBY_APIKEY
+                            })
+                            logger.info(f"添加剧集 {series_name} 到待处理列表")
+                        else:
+                            logger.info(f"跳过 {series_name}: 已全部观看")
+
+            logger.info(f"最终获取到 {len(watching_series)} 个需要处理的剧集")
+            return watching_series
 
         except Exception as e:
             logger.error(f"获取Emby观看记录失败: {e}", exc_info=True)
@@ -747,16 +729,8 @@ class Danmu(_PluginBase):
             logger.warning("插件未启用，跳过Emby弹幕更新")
             return
 
-        if not self._emby_url:
-            logger.warning("未配置Emby服务器地址，跳过Emby弹幕更新")
-            return
-
-        if not self._emby_api_key:
-            logger.warning("未配置Emby API Key，跳过Emby弹幕更新")
-            return
-
-        if not self._emby_user_id:
-            logger.warning("未配置Emby用户ID，跳过Emby弹幕更新")
+        if not self._mediaservers:
+            logger.warning("未配置Emby服务器，跳过Emby弹幕更新")
             return
 
         if not self._path:
@@ -781,12 +755,12 @@ class Danmu(_PluginBase):
                         f"(已观看: {series['watched_episodes']}/{series['total_episodes']})")
 
             # 获取剧集所有集数信息
-            url = f"{self._emby_url}/emby/Shows/{series['series_id']}/Episodes"
+            url = f"{series['emby_host']}emby/Shows/{series['series_id']}/Episodes"
             headers = {
-                'X-Emby-Token': self._emby_api_key,
+                'X-Emby-Token': series['emby_apikey'],
                 'X-Emby-Authorization': f'MediaBrowser Client="MoviePilot", Device="MoviePilot", DeviceId="MoviePilot", Version="1.0.0"'
             }
-            params = {'UserId': self._emby_user_id}
+            params = {'UserId': series['emby_user']}
 
             logger.info(f"请求剧集信息: {url}")
             response = RequestUtils(headers=headers).get_res(url, params=params)
