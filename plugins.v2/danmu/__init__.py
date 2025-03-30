@@ -65,7 +65,7 @@ class Danmu(_PluginBase):
     _EMBY_HOST = None
     _EMBY_USER = None
     _EMBY_APIKEY = None
-    _emby_update_cron = "0 0 * * *"  # 默认每天凌晨执行
+    _emby_update_enabled = False
 
     media_chain = MediaChain()
 
@@ -89,7 +89,7 @@ class Danmu(_PluginBase):
 
             # Emby配置
             self._mediaservers = config.get("mediaservers", [])
-            self._emby_update_cron = config.get("emby_update_cron", "0 0 * * *")
+            self._emby_update_enabled = config.get("emby_update_enabled", False)
 
         if self._enabled:
             logger.info("弹幕加载插件已启用")
@@ -118,11 +118,11 @@ class Danmu(_PluginBase):
                     "func": self.generate_danmu_global,
                     "kwargs": {}
                 })
-            if self._mediaservers:
+            if self._mediaservers and self._emby_update_enabled:
                 services.append({
                     "id": "DanmuEmbyUpdate",
                     "name": "Emby观看记录弹幕更新服务",
-                    "trigger": CronTrigger.from_crontab(self._emby_update_cron),
+                    "trigger": CronTrigger.from_crontab("0 0 * * *"),
                     "func": self.update_emby_watching_danmu,
                     "kwargs": {}
                 })
@@ -216,6 +216,27 @@ class Danmu(_PluginBase):
                                         'props': {
                                             'model': 'convertT2S',
                                             'label': '繁体转中文',
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'emby_update_enabled',
+                                            'label': '启用Emby弹幕更新,只会更新一个月内观看过的剧集中未播放的集数的弹幕',
                                         }
                                     }
                                 ]
@@ -351,6 +372,26 @@ class Danmu(_PluginBase):
                                         }
                                     }
                                 ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 6,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'model': 'mediaservers',
+                                            'label': 'Emby服务器',
+                                            'items': emby_options,
+                                            'multiple': True,
+                                            'chips': True,
+                                            'placeholder': '请选择Emby服务器',
+                                            'v-show': 'emby_update_enabled'
+                                        }
+                                    }
+                                ]
                             }
                         ]
                     },
@@ -390,72 +431,6 @@ class Danmu(_PluginBase):
                                 ]
                             }
                         ]
-                    },
-                    {
-                        'component': 'VDivider',
-                        'props': {
-                            'label': 'Emby配置'
-                        }
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSelect',
-                                        'props': {
-                                            'model': 'mediaservers',
-                                            'label': 'Emby服务器',
-                                            'items': emby_options,
-                                            'multiple': True,
-                                            'chips': True,
-                                            'placeholder': '请选择Emby服务器',
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'emby_update_cron',
-                                            'label': '弹幕更新定时任务',
-                                            'placeholder': '默认每天凌晨执行',
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'content': [
-                                    {
-                                        'component': 'VAlert',
-                                        'props': {
-                                            'type': 'info',
-                                            'variant': 'flat',
-                                            'text': 'Emby配置说明：\n1. 需要选择Emby服务器\n2. 插件会自动获取最近观看的剧集信息\n3. 只更新未完成观看的剧集弹幕\n4. 一个月内未观看的剧集不会更新弹幕',
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
                     }
                 ]
             }
@@ -473,7 +448,7 @@ class Danmu(_PluginBase):
             "convertT2S": True,
             "subtitle_area_height": 150,
             "mediaservers": [],
-            "emby_update_cron": "0 0 * * *"
+            "emby_update_enabled": False
         }
 
     def get_page(self) -> List[dict]:
