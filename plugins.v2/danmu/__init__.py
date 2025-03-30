@@ -30,7 +30,7 @@ class Danmu(_PluginBase):
     # 主题色
     plugin_color = "#3B5E8E"
     # 插件版本
-    plugin_version = "1.1.15"
+    plugin_version = "1.1.16"
     # 插件作者
     plugin_author = "edhnt455"
     # 作者主页
@@ -71,7 +71,7 @@ class Danmu(_PluginBase):
 
     def init_plugin(self, config: dict = None):
         self.mediaserver_helper = MediaServerHelper()
-        
+
         if config:
             self._enabled = config.get("enabled", False)
             self._width = config.get("width", 1920)
@@ -639,7 +639,7 @@ class Danmu(_PluginBase):
                         played_percentage = user_data.get('PlayedPercentage', 0)
                         played = user_data.get('Played', False)
                         last_played = user_data.get('LastPlayedDate')
-                        
+
                         # 如果最后播放时间不在30天内，跳过
                         if last_played:
                             last_played_date = datetime.fromisoformat(last_played.replace('Z', '+00:00'))
@@ -752,7 +752,8 @@ class Danmu(_PluginBase):
                 # 获取视频文件路径
                 media_path = episode.get('Path')
                 if not media_path:
-                    logger.warning(f"未找到视频文件路径: {series['series_name']} 第 {episode_number} 集 (ID: {episode_id})")
+                    logger.warning(
+                        f"未找到视频文件路径: {series['series_name']} 第 {episode_number} 集 (ID: {episode_id})")
                     continue
 
                 if not os.path.exists(media_path):
