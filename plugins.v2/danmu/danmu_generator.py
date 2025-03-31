@@ -239,9 +239,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     @classmethod
     def convert_comments_to_ass(cls, comments: List[Dict], output_file: str, width: int, height: int, fontface: str,
-                                fontsize: float, alpha: float, duration: float, convert_t_2_s: bool, subtitle_area_height: int = 150):
+                                fontsize: float, alpha: float, duration: float, convert_t_2_s: bool, subtitle_area_height: int = 200):
         styleid = 'Danmu'
-        max_tracks = int(height) // int(fontsize)
+        # 确保所有数值都是正确的类型
+        width = int(width)
+        height = int(height)
+        fontsize = float(fontsize)
+        subtitle_area_height = int(subtitle_area_height)
+        
+        # 调整最大轨道数，使弹幕更密集
+        max_tracks = int((height - subtitle_area_height) / (fontsize * 0.8))
         scrolling_tracks = {}
         top_tracks = {}
         bottom_tracks = {}
@@ -250,6 +257,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         
         with open(output_file, 'w', encoding='utf-8-sig') as f:
             cls.write_ass_head(f, width, height, fontface, fontsize, alpha, styleid)
+            
+            bottom_danmu_count = 0
+            skipped_danmu_count = 0
             
             for comment in comments:
                 try:
@@ -284,22 +294,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     if pos == 1:  # 滚动弹幕
                         track_id = cls.find_non_overlapping_track(scrolling_tracks, timeline, max_tracks)
                         scrolling_tracks[track_id] = timeline + leave_time
-                        initial_y = (track_id - 1) * fontsize + 10
+                        initial_y = (track_id - 1) * fontsize * 0.8 + 10
                         styles = f'\\move({width}, {initial_y}, {-len(text)*fontsize}, {initial_y})'
                     elif pos == 4:  # 底部弹幕
+                        bottom_danmu_count += 1
                         track_id = cls.find_non_overlapping_track(bottom_tracks, timeline, max_tracks)
-                        subtitle_area_height = int(subtitle_area_height)
-                        # 如果启用避开字幕区域且是底部弹幕，检查是否会遮挡字幕
-                        if subtitle_area_height != 0:
-                            bottom_position = height - 50 - (track_id - 1) * fontsize
-                            if bottom_position > (height - subtitle_area_height):
-                                continue
+                        # 计算弹幕的垂直位置，使用更小的间距
+                        bottom_position = height - (track_id - 1) * fontsize * 0.8
+                        # 如果启用防遮挡且弹幕位置在字幕区域内，跳过该弹幕
+                        if subtitle_area_height > 0 and bottom_position > (height - subtitle_area_height):
+                            skipped_danmu_count += 1
+                            continue
                         bottom_tracks[track_id] = timeline + duration
-                        styles = f'\\an2\\pos({width/2}, {height - 50 - (track_id - 1) * fontsize})'
+                        styles = f'\\an2\\pos({width/2}, {bottom_position})'
                     elif pos == 5:  # 顶部弹幕
                         track_id = cls.find_non_overlapping_track(top_tracks, timeline, max_tracks)
                         top_tracks[track_id] = timeline + duration
-                        styles = f'\\an8\\pos({width/2}, {50 + (track_id - 1) * fontsize})'
+                        styles = f'\\an8\\pos({width/2}, {50 + (track_id - 1) * fontsize * 0.8})'
                     else:
                         styles = f'\\move(0, 0, {width}, 0)'
 
@@ -308,7 +319,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     logger.error(f"处理弹幕数据失败: {e}, 弹幕数据: {comment}")
                     continue
             
-            logger.info('弹幕生成成功 - ' + output_file)
+            logger.info(f'弹幕生成完成 - {output_file}')
+            logger.info(f'底部弹幕统计 - 总数: {bottom_danmu_count}, 因防遮挡跳过: {skipped_danmu_count}')
 
 class SubtitleProcessor:
     @staticmethod
@@ -437,7 +449,7 @@ def danmu_generator(file_path: str, width: int = 1920, height: int = 1080,
                    fontface: str = 'Arial', fontsize: float = 50, 
                    alpha: float = 0.8, duration: float = 6, onlyFromBili: bool = False,
                    use_tmdb_id: bool = False, convert_t_2_s: bool = False, tmdb_id: Optional[int] = None,
-                   episode: Optional[int] = None, subtitle_area_height: int = 150) -> Optional[str]:
+                   episode: Optional[int] = None, subtitle_area_height: int = 200) -> Optional[str]:
     try:
         comment_id = DanmuAPI.get_comment_id(file_path, use_tmdb_id, tmdb_id, episode)
         if not comment_id:
