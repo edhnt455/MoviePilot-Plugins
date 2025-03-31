@@ -57,7 +57,7 @@ class Danmu(_PluginBase):
     _onlyFromBili = False
     _useTmdbID = True
     _convertT2S = True
-    _subtitle_area_height = 150
+    _subtitle_area_height = 200
 
     # Emby配置
     _mediaservers = None
@@ -85,7 +85,7 @@ class Danmu(_PluginBase):
             self._onlyFromBili = config.get("onlyFromBili", False)
             self._useTmdbID = config.get("useTmdbID", True)
             self._convertT2S = config.get("convertT2S", True)
-            self._subtitle_area_height = config.get("subtitle_area_height", 150)
+            self._subtitle_area_height = 200 if config.get("subtitle_area_enabled", True) else 0
 
             # Emby配置
             self._mediaservers = config.get("mediaservers", [])
@@ -240,6 +240,22 @@ class Danmu(_PluginBase):
                                         }
                                     }
                                 ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'subtitle_area_enabled',
+                                            'label': '启用字幕防遮挡',
+                                        }
+                                    }
+                                ]
                             }
                         ]
                     },
@@ -360,23 +376,7 @@ class Danmu(_PluginBase):
                             {
                                 'component': 'VCol',
                                 'props': {
-                                    'cols': 6,
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'subtitle_area_height',
-                                            'label': '底部字幕防遮挡范围，默认150，为0不开启防遮挡',
-                                            'type': 'number',
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 6,
+                                    'cols': 12,
                                 },
                                 'content': [
                                     {
@@ -446,7 +446,7 @@ class Danmu(_PluginBase):
             "onlyFromBili": False,
             "useTmdbID": True,
             "convertT2S": True,
-            "subtitle_area_height": 150,
+            "subtitle_area_enabled": True,
             "mediaservers": [],
             "emby_update_enabled": False
         }
