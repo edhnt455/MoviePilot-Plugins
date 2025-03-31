@@ -620,7 +620,6 @@ class Danmu(_PluginBase):
                     'SortBy': 'DatePlayed',
                     'SortOrder': 'Descending',
                     'IncludeItemTypes': 'Episode',
-                    'Filters': 'IsResumable',
                     'MinDateLastSaved': start_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
                     'MaxDateLastSaved': end_date.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
