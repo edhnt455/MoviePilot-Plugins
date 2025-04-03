@@ -30,7 +30,7 @@ class Danmu(_PluginBase):
     # 主题色
     plugin_color = "#3B5E8E"
     # 插件版本
-    plugin_version = "1.1.16"
+    plugin_version = "1.1.17"
     # 插件作者
     plugin_author = "edhnt455"
     # 作者主页
@@ -57,7 +57,8 @@ class Danmu(_PluginBase):
     _onlyFromBili = False
     _useTmdbID = True
     _convertT2S = True
-    _subtitle_area_height = 200
+    _subtitle_area_height = 150
+    _max_comments = 2000
 
     # Emby配置
     _mediaservers = None
@@ -85,7 +86,8 @@ class Danmu(_PluginBase):
             self._onlyFromBili = config.get("onlyFromBili", False)
             self._useTmdbID = config.get("useTmdbID", True)
             self._convertT2S = config.get("convertT2S", True)
-            self._subtitle_area_height = 200 if config.get("subtitle_area_enabled", True) else 0
+            self._subtitle_area_height = config.get("subtitle_area_height", 150)
+            self._max_comments = config.get("max_comments", 2000)
 
             # Emby配置
             self._mediaservers = config.get("mediaservers", [])
@@ -400,6 +402,28 @@ class Danmu(_PluginBase):
                         'content': [
                             {
                                 'component': 'VCol',
+                                'props': {
+                                    'cols': 6,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'max_comments',
+                                            'label': '最大弹幕数量，0表示不限制',
+                                            'type': 'number',
+                                            'placeholder': '默认2000'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
                                 'content': [
                                     {
                                         'component': 'VTextarea',
@@ -448,7 +472,8 @@ class Danmu(_PluginBase):
             "convertT2S": True,
             "subtitle_area_enabled": True,
             "mediaservers": [],
-            "emby_update_enabled": False
+            "emby_update_enabled": False,
+            "max_comments": 2000,
         }
 
     def get_page(self) -> List[dict]:
@@ -483,7 +508,8 @@ class Danmu(_PluginBase):
                 self._convertT2S,
                 tmdb_id,
                 episode,
-                self._subtitle_area_height
+                self._subtitle_area_height,
+                self._max_comments
             )
         except Exception as e:
             logger.error(f"生成弹幕失败: {e}")
