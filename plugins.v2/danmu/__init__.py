@@ -242,6 +242,22 @@ class Danmu(_PluginBase):
                                         }
                                     }
                                 ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'subtitle_area_enabled',
+                                            'label': '启用字幕防遮挡',
+                                        }
+                                    }
+                                ]
                             }
                         ]
                     },
@@ -362,23 +378,7 @@ class Danmu(_PluginBase):
                             {
                                 'component': 'VCol',
                                 'props': {
-                                    'cols': 6,
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'subtitle_area_height',
-                                            'label': '底部字幕防遮挡范围，默认150，为0不开启防遮挡',
-                                            'type': 'number',
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 6,
+                                    'cols': 12,
                                 },
                                 'content': [
                                     {
@@ -470,7 +470,7 @@ class Danmu(_PluginBase):
             "onlyFromBili": False,
             "useTmdbID": True,
             "convertT2S": True,
-            "subtitle_area_height": 150,
+            "subtitle_area_enabled": True,
             "mediaservers": [],
             "emby_update_enabled": False,
             "max_comments": 2000,
@@ -638,17 +638,14 @@ class Danmu(_PluginBase):
                 }
                 params = {
                     'Recursive': 'true',
-                    'Fields': 'BasicSyncInfo,UserData',
+                    'Fields': 'BasicSyncInfo,UserData,DatePlayed,Path,MediaPath,MediaSources',
                     'ImageTypeLimit': 1,
                     'EnableImageTypes': 'Primary',
                     'StartIndex': 0,
                     'Limit': 100,
                     'SortBy': 'DatePlayed',
                     'SortOrder': 'Descending',
-                    'IncludeItemTypes': 'Episode',
-                    'Filters': 'IsResumable',
-                    'MinDateLastSaved': start_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    'MaxDateLastSaved': end_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+                    'IncludeItemTypes': 'Episode'
                 }
 
                 response = RequestUtils(headers=headers).get_res(url, params=params)
@@ -664,13 +661,15 @@ class Danmu(_PluginBase):
                         user_data = item.get('UserData', {})
                         played_percentage = user_data.get('PlayedPercentage', 0)
                         played = user_data.get('Played', False)
-                        last_played = user_data.get('LastPlayedDate')
+                        last_played = item.get('DatePlayed')
 
                         # 如果最后播放时间不在30天内，跳过
                         if last_played:
                             last_played_date = datetime.fromisoformat(last_played.replace('Z', '+00:00'))
                             if last_played_date < start_date:
                                 continue
+                        else:
+                            continue
 
                         # 如果已标记为已播放，跳过
                         if played:
@@ -685,6 +684,7 @@ class Danmu(_PluginBase):
                         series_response = RequestUtils(headers=headers).get_res(series_url,
                                                                                 params={'UserId': self._EMBY_USER})
                         if not series_response or series_response.status_code != 200:
+                            logger.error(f"获取剧集信息失败: {series_name}")
                             continue
 
                         series_info = series_response.json()

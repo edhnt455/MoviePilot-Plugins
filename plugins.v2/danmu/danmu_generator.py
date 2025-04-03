@@ -349,7 +349,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                                 fontsize: float, alpha: float, duration: float, convert_t_2_s: bool,
                                 subtitle_area_height: int = 150, max_comments: int = 2000):
         styleid = 'Danmu'
-        max_tracks = int(height) // int(fontsize)
+        # 确保所有数值都是正确的类型
+        width = int(width)
+        height = int(height)
+        fontsize = float(fontsize)
+        subtitle_area_height = int(subtitle_area_height)
+        
+        # 调整最大轨道数，使弹幕更密集
+        max_tracks = int((height - subtitle_area_height) / (fontsize * 0.8))
         scrolling_tracks = {}
         top_tracks = {}
         bottom_tracks = {}
@@ -398,13 +405,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         initial_y = (track_id - 1) * fontsize + 10
                         styles = f'\\move({width}, {initial_y}, {-len(text) * fontsize}, {initial_y})'
                     elif pos == 4:  # 底部弹幕
+                        bottom_danmu_count += 1
                         track_id = cls.find_non_overlapping_track(bottom_tracks, timeline, max_tracks)
-                        subtitle_area_height = int(subtitle_area_height)
-                        # 如果启用避开字幕区域且是底部弹幕，检查是否会遮挡字幕
-                        if subtitle_area_height != 0:
-                            bottom_position = height - 50 - (track_id - 1) * fontsize
-                            if bottom_position > (height - subtitle_area_height):
-                                continue
+                        # 计算弹幕的垂直位置，使用更小的间距
+                        bottom_position = height - (track_id - 1) * fontsize * 0.8
+                        # 如果启用防遮挡且弹幕位置在字幕区域内，跳过该弹幕
+                        if subtitle_area_height > 0 and bottom_position > (height - subtitle_area_height):
+                            skipped_danmu_count += 1
+                            continue
                         bottom_tracks[track_id] = timeline + duration
                         styles = f'\\an2\\pos({width / 2}, {height - 50 - (track_id - 1) * fontsize})'
                     elif pos == 5:  # 顶部弹幕
