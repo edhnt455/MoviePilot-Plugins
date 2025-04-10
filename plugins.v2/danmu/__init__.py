@@ -562,6 +562,10 @@ class Danmu(_PluginBase):
         if not self._enabled:
             return
 
+        if not self._path:
+            logger.warning("未设置刮削路径，跳过弹幕生成")
+            return
+
         def __to_dict(_event):
             """
             递归将对象转换为字典
@@ -589,6 +593,18 @@ class Danmu(_PluginBase):
 
             if not target_file:
                 logger.warning("未找到目标文件")
+                return
+
+            # 检查文件是否在刮削路径下
+            is_monitored = False
+            monitor_paths = [path.strip() for path in self._path.split('\n') if path.strip()]
+            for monitor_path in monitor_paths:
+                if os.path.abspath(target_file).startswith(os.path.abspath(monitor_path)):
+                    is_monitored = True
+                    break
+
+            if not is_monitored:
+                logger.info(f"文件不在刮削路径下，跳过弹幕生成: {target_file}")
                 return
 
             logger.info(f"开始生成弹幕文件：{target_file}")
