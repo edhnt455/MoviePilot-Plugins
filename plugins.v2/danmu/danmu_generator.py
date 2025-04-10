@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from app.log import logger
 import opencc
 
-
 @dataclass
 class VideoInfo:
     file_name: str
@@ -18,7 +17,6 @@ class VideoInfo:
     file_size: int
     video_duration: int
     match_mode: str = "hashAndFileName"
-
 
 class DanmuAPI:
     BASE_URL = 'https://dandanapi.hankun.online/api/v1'
@@ -49,10 +47,10 @@ class DanmuAPI:
                 stdout=subprocess.PIPE
             )
             _, stderr = process.communicate()
-
+            
             stderr = stderr.decode('utf-8', errors='ignore')
             duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", stderr)
-
+            
             if duration_match:
                 hours, minutes, seconds = map(float, duration_match.groups())
                 return hours * 3600 + minutes * 60 + seconds
@@ -116,7 +114,7 @@ class DanmuAPI:
             file_name = os.path.basename(file_path)
             file_size = DanmuAPI.get_file_size(file_path)
             file_hash = DanmuAPI.calculate_md5_of_first_16MB(file_path)
-
+            
             video_info = VideoInfo(
                 file_name=file_name,
                 file_hash=file_hash,
@@ -124,21 +122,30 @@ class DanmuAPI:
                 video_duration=int(DanmuAPI.get_video_duration(file_path) or 0)
             )
 
+            # 检查当前目录下所有的 .id 文件
+            video_dir = os.path.dirname(file_path)
+            for file in os.listdir(video_dir):
+                if file.endswith('.id'):
+                    id_file = os.path.join(video_dir, file)
+                    logger.info(f"找到弹幕ID文件 - {id_file}")
+                    fileID = str(int(os.path.splitext(file)[0]) * 10000 + int(episode))
+                    return fileID
+
             # 使用 match API
             url = f"{DanmuAPI.BASE_URL}/match"
             response = requests.post(url, json=video_info.__dict__, headers=DanmuAPI.HEADERS)
-
+            
             if response.status_code == 200:
                 result = response.json()
                 if result.get("isMatched") and result.get("matches"):
                     return str(result["matches"][0]["episodeId"])
-
+            
             # 如果使用TMDB ID且提供了TMDB ID，尝试使用TMDB ID匹配
             if use_tmdb_id and tmdb_id is not None:
                 comment_id = DanmuAPI.search_by_tmdb_id(tmdb_id, episode)
                 if comment_id:
                     return comment_id
-
+            
             return None
         except Exception as e:
             logger.error(f"获取弹幕ID失败: {e}")
@@ -177,7 +184,6 @@ class DanmuAPI:
         except Exception as e:
             logger.error(f"获取弹幕失败: {e}")
             return None
-
 
 class DanmuConverter:
     @staticmethod
@@ -354,7 +360,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         height = int(height)
         fontsize = float(fontsize)
         subtitle_area_height = int(subtitle_area_height)
-        
+
         # 调整最大轨道数，使弹幕更密集
         max_tracks = int((height - subtitle_area_height) / (fontsize * 0.8))
         scrolling_tracks = {}
@@ -365,17 +371,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         comments = cls.filter_comments(comments, max_comments)
 
         logger.info(f"{output_file} - 共匹配到{len(comments)}条弹幕。")
-
+        
         with open(output_file, 'w', encoding='utf-8-sig') as f:
             cls.write_ass_head(f, width, height, fontface, fontsize, alpha, styleid)
-
+            
             for comment in comments:
                 try:
                     p = comment.get('p', '').split(',')
                     if len(p) < 3:
                         logger.warning(f"弹幕数据格式不正确: {comment}")
                         continue
-
+                    
                     timeline = float(p[0])
                     pos = int(p[1])
                     color = int(p[2])
@@ -387,10 +393,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
                     if not text:
                         continue
-
+                        
                     start_time = cls.convert_timestamp(timeline)
                     end_time = cls.convert_timestamp(timeline + duration)
-
+                    
                     gap = 1
                     text_width = len(text) * fontsize * 0.6
                     velocity = (width + text_width) / duration
@@ -398,7 +404,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
                     color_hex = f'&H{color & 0xFFFFFF:06X}'
                     styles = ''
-
+                    
                     if pos == 1:  # 滚动弹幕
                         track_id = cls.find_non_overlapping_track(scrolling_tracks, timeline, max_tracks)
                         scrolling_tracks[track_id] = timeline + leave_time
@@ -428,7 +434,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     continue
 
             logger.info('弹幕生成成功 - ' + output_file)
-
 
 class SubtitleProcessor:
     @staticmethod
@@ -467,14 +472,14 @@ class SubtitleProcessor:
                 stream_index = stream['index']
                 base_name = os.path.splitext(file_path)[0]
                 language = stream.get('tags', {}).get('language', 'unknown')
-
+                
                 if language not in ['zh', 'zho', 'chi', 'chs', 'cht', 'cn']:
                     continue
-
+                    
                 output_file = f"{base_name}.{language}.ass"
                 if os.path.exists(output_file):
                     os.remove(output_file)
-
+                    
                 if cls.extract_subtitles(file_path, output_file, stream_index):
                     logger.info(f'成功提取内嵌字幕 - {output_file}')
                     break
@@ -497,19 +502,19 @@ class SubtitleProcessor:
     def combine_sub_ass(sub1: str, sub2: str) -> bool:
         if not sub1 or not sub2:
             return False
-
+        
         try:
             with open(sub1, 'r', encoding='utf-8-sig') as f:
                 sub1_content = f.read()
-
+            
             with open(sub2, 'rb') as f:
                 raw_data = f.read()
                 result = chardet.detect(raw_data)
                 file_encoding = result['encoding']
-
+            
             with open(sub2, 'r', encoding=file_encoding) as f:
                 sub2_content = f.read()
-
+                
             if os.path.splitext(sub2)[1].lower() in ['.ass', '.ssa']:
                 sub1ResX = re.search(r"PlayResX:\s*(\d+)", sub1_content)
                 sub2ResX = re.search(r"PlayResX:\s*(\d+)", sub2_content)
@@ -535,7 +540,7 @@ class SubtitleProcessor:
 
                 events_content = sub2_content[events_start + len('[Events]'):].strip()
                 output = os.path.splitext(sub2)[0] + ".withDanmu.ass"
-
+                
                 with open(output, 'w', encoding='utf-8-sig') as f:
                     f.write(sub1_content)
                     f.write('\n[V4+ Styles]\n')
@@ -544,11 +549,11 @@ class SubtitleProcessor:
                     f.write('\n'.join(style_lines))
                     f.write('\n[Events]\n')
                     f.write(events_content)
-
+                
                 return True
-
+                
             return False
-
+            
         except Exception as e:
             logger.error(f"合并字幕失败: {e}")
             return False
@@ -571,7 +576,7 @@ def danmu_generator(file_path: str, width: int = 1920, height: int = 1080,
             return None
 
         comments = sorted(comments_data["comments"], key=lambda x: float(x['p'].split(',')[0]))
-
+        
         if len(comments) == 0:
             logger.info(f"弹幕数量为0，跳过生成 - {file_path}")
             return None
@@ -582,7 +587,7 @@ def danmu_generator(file_path: str, width: int = 1920, height: int = 1080,
             logger.info(f"过滤后剩余{len(comments)}条B站弹幕")
 
         output_file = os.path.splitext(file_path)[0] + '.danmu.ass'
-
+        
         DanmuConverter.convert_comments_to_ass(
             comments, output_file,
             width=int(width),
