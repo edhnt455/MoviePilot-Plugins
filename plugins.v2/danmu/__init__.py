@@ -830,3 +830,51 @@ class Danmu(_PluginBase):
                 thread.join()
 
         logger.info("Emby观看记录弹幕更新完成")
+
+    @eventmanager.register(EventType.WebhookMessage)
+    def handle_emby_webhook(self, event):
+        """
+        处理Emby webhook事件
+        """
+        if not self._enabled:
+            return
+
+        if not self._path:
+            return
+
+        try:
+            event_data = event.event_data
+            event_type = event_data.event
+
+            # 只处理媒体库添加事件
+            if not event_type or str(event_type) != 'library.new':
+                return
+
+            # 获取媒体信息
+            media_type = event_data.media_type
+            media_path = event_data.item_path
+
+            # 检查文件是否在监控路径下
+            is_monitored = False
+            monitor_paths = [path.strip() for path in self._path.split('\n') if path.strip()]
+            for monitor_path in monitor_paths:
+                if os.path.abspath(media_path).startswith(os.path.abspath(monitor_path)):
+                    is_monitored = True
+                    break
+
+            if not is_monitored:
+                return
+
+            # 检查文件类型
+            if not media_path.lower().endswith(('.mp4', '.mkv')):
+                return
+
+            logger.info(f"检测到新文件，开始生成弹幕: {media_path}")
+            thread = threading.Thread(
+                target=self.generate_danmu,
+                args=(media_path,)
+            )
+            thread.start()
+
+        except Exception as e:
+            logger.error(f"处理Emby webhook事件失败: {e}")
