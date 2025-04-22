@@ -5,6 +5,7 @@ import threading
 import traceback
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
+import xml.etree.ElementTree as ET
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -113,6 +114,7 @@ class CloudLinkMonitor(_PluginBase):
     _min_duration = 15
     _max_duration = 120
     _min_resolution = "1920x1080"
+    _min_size = 100
 
     def init_plugin(self, config: dict = None):
         self.transferhis = TransferHistoryOper()
@@ -140,7 +142,7 @@ class CloudLinkMonitor(_PluginBase):
             self._monitor_dirs = config.get("monitor_dirs") or ""
             self._exclude_keywords = config.get("exclude_keywords") or ""
             self._interval = config.get("interval") or 10
-            # self._cron = config.get("cron")
+            self._min_size = config.get("min_size") or 100
             self._size = config.get("size") or 0
             self._softlink = config.get("softlink")
             self._strm = config.get("strm")
@@ -277,6 +279,7 @@ class CloudLinkMonitor(_PluginBase):
             "category": self._category,
             "size": self._size,
             "refresh": self._refresh,
+            "min_size": self._min_size,
             "min_duration": self._min_duration,
             "max_duration": self._max_duration,
             "min_resolution": self._min_resolution
@@ -328,6 +331,67 @@ class CloudLinkMonitor(_PluginBase):
             logger.debug("文件%s：%s" % (text, event_path))
             self.__handle_file(event_path=event_path, mon_path=mon_path)
 
+    def __parse_nfo_file(self, file_path: Path) -> tuple:
+        """
+        解析nfo文件获取视频信息
+        :param file_path: 视频文件路径
+        :return: (duration, width, height) 如果解析失败返回None
+        """
+        nfo_path = file_path.with_suffix('.nfo')
+        if not nfo_path.exists():
+            logger.info(f"未找到nfo文件：{nfo_path}")
+            return None
+
+        try:
+            logger.info(f"开始解析nfo文件：{nfo_path}")
+            tree = ET.parse(nfo_path)
+            root = tree.getroot()
+            
+            # 获取时长（秒）
+            duration = None
+            runtime = root.find('.//runtime')
+            if runtime is not None and runtime.text:
+                try:
+                    # 尝试将分钟转换为秒
+                    duration = float(runtime.text) * 60
+                    logger.info(f"从nfo文件获取时长：{duration/60:.1f}分钟")
+                except ValueError:
+                    logger.warn(f"nfo文件时长格式错误：{runtime.text}")
+                    pass
+            else:
+                logger.warn(f"nfo文件未找到runtime节点或内容为空")
+
+            # 获取分辨率
+            width = None
+            height = None
+            streamdetails = root.find('.//streamdetails')
+            if streamdetails is not None:
+                video = streamdetails.find('.//video')
+                if video is not None:
+                    width_elem = video.find('width')
+                    height_elem = video.find('height')
+                    if width_elem is not None and width_elem.text:
+                        width = int(width_elem.text)
+                        logger.info(f"从nfo文件获取宽度：{width}")
+                    if height_elem is not None and height_elem.text:
+                        height = int(height_elem.text)
+                        logger.info(f"从nfo文件获取高度：{height}")
+                else:
+                    logger.warn("nfo文件未找到video节点")
+            else:
+                logger.warn("nfo文件未找到streamdetails节点")
+
+            if duration is not None and width is not None and height is not None:
+                logger.info(f"成功从nfo文件获取完整信息：{width}x{height} - {duration/60:.1f}分钟")
+                return duration, width, height
+            else:
+                logger.warn(f"nfo文件信息不完整：duration={duration}, width={width}, height={height}")
+                return None
+        except Exception as e:
+            logger.error(f"解析nfo文件失败：{nfo_path} - {str(e)}")
+            logger.error(f"错误详情：{traceback.format_exc()}")
+            return None
+
     def __check_video_info(self, file_path: Path) -> bool:
         """
         检查视频信息
@@ -335,29 +399,39 @@ class CloudLinkMonitor(_PluginBase):
         :return: 是否满足要求
         """
         try:
-            from moviepy.editor import VideoFileClip
-            with VideoFileClip(str(file_path)) as video:
-                duration = video.duration
-                width, height = video.size
+            # 先尝试从nfo文件获取信息
+            logger.info(f"开始检查视频信息：{file_path}")
+            video_info = self.__parse_nfo_file(file_path)
+            if video_info:
+                duration, width, height = video_info
+                
+                logger.info(f"从nfo文件获取视频信息：{file_path} - {width}x{height} - {duration/60:.1f}分钟")
+                
+                # 检查时长
+                if duration < float(self._min_duration) * 60 or duration > float(self._max_duration) * 60:
+                    logger.info(f"视频时长不符合要求：{file_path} - {duration/60:.1f}分钟 (要求：{self._min_duration}-{self._max_duration}分钟)")
+                    return False
+
+                # 检查分辨率
+                min_width, min_height = map(int, self._min_resolution.split('x'))
+                if width < height:
+                    logger.info(f"竖屏视频：{file_path} - {width}x{height}")
+                    return False
+                if width * height < min_width * min_height:
+                    logger.info(f"分辨率不足：{file_path} - {width}x{height} (要求：{self._min_resolution})")
+                    return False
+
+                logger.info(f"视频信息检查通过：{file_path}")
+                return True
+            else:
+                logger.info(f"未找到nfo文件或解析失败：{file_path}，将尝试其他方式获取信息")
+                # 这里可以添加其他获取视频信息的方式
+                return True  # 如果无法获取信息，返回True以保留文件
+                
         except Exception as e:
             logger.error(f"检查视频信息失败：{file_path} - {str(e)}")
-            return False
-
-        # 检查时长
-        if duration < float(self._min_duration) * 60 or duration > float(self._max_duration) * 60:
-            logger.info(f"视频时长不符合要求：{file_path} - {duration / 60:.1f}分钟")
-            return False
-
-        # 检查分辨率
-        min_width, min_height = map(int, self._min_resolution.split('x'))
-        if width < height:
-            logger.info(f"竖屏视频：{file_path} - {width}x{height}")
-            return False
-        if width * height < min_width * min_height:
-            logger.info(f"分辨率不足：{file_path} - {width}x{height}")
-            return False
-
-        return True
+            logger.error(f"错误详情：{traceback.format_exc()}")
+            return True  # 返回True以保留文件
 
     def __handle_file(self, event_path: str, mon_path: str):
         """
@@ -396,6 +470,41 @@ class CloudLinkMonitor(_PluginBase):
                             logger.info(f"{event_path} 命中整理屏蔽词 {keyword}，不处理")
                             return
 
+                # 检查文件大小
+                file_size_mb = file_path.stat().st_size / (1024 * 1024)
+                # nfo 文件不检查大小
+                if file_path.suffix == '.nfo':
+                    logger.debug(f"{event_path} 是 nfo 文件，跳过大小检查")
+                elif file_size_mb < self._min_size:
+                    logger.info(f"{event_path} 文件大小 {file_size_mb:.2f}MB 小于最小限制 {self._min_size}MB，将被删除")
+                    try:
+                        file_path.unlink()
+                        # 删除文件后检查并删除空目录
+                        self.__delete_empty_dirs(file_path.parent, mon_path)
+                        if self._notify:
+                            self.post_message(
+                                mtype=NotificationType.Manual,
+                                title="文件已删除",
+                                text=f"文件 {file_path.name} 大小 {file_size_mb:.2f}MB 小于最小限制 {self._min_size}MB"
+                            )
+                    except Exception as e:
+                        logger.error(f"删除文件失败：{event_path} - {str(e)}")
+                    return
+
+                # 检查视频信息
+                check_result = self.__check_video_info(file_path)
+                if check_result is False:
+                    # 如果是移动模式，直接删除不符合要求的视频
+                    if self._transfer_type == "move":
+                        try:
+                            logger.info(f"移动模式，删除不符合要求的视频：{event_path}")
+                            file_path.unlink()
+                            # 删除视频后检查并删除空目录
+                            self.__delete_empty_dirs(file_path.parent, mon_path)
+                        except Exception as e:
+                            logger.error(f"删除视频文件失败：{event_path} - {str(e)}")
+                    return
+
                 # 不是媒体文件不处理
                 if file_path.suffix not in settings.RMT_MEDIAEXT:
                     logger.debug(f"{event_path} 不是媒体文件")
@@ -404,24 +513,24 @@ class CloudLinkMonitor(_PluginBase):
                         try:
                             logger.info(f"移动模式，删除非媒体文件：{event_path}")
                             file_path.unlink()
+                            # 删除文件后立即检查并删除空目录
+                            self.__delete_empty_dirs(file_path.parent, mon_path)
                         except Exception as e:
                             logger.error(f"删除非媒体文件失败：{event_path} - {str(e)}")
-                    return
-
-                # 检查视频信息
-                if not self.__check_video_info(file_path):
-                    # 如果是移动模式，直接删除不符合要求的视频
-                    if self._transfer_type == "move":
-                        try:
-                            logger.info(f"移动模式，删除不符合要求的视频：{event_path}")
-                            file_path.unlink()
-                        except Exception as e:
-                            logger.error(f"删除视频文件失败：{event_path} - {str(e)}")
                     return
 
                 # 判断文件大小
                 if self._size and float(self._size) > 0 and file_path.stat().st_size < float(self._size) * 1024 ** 3:
                     logger.info(f"{file_path} 文件大小小于监控文件大小，不处理")
+                    # 如果是移动模式，直接删除小文件
+                    if self._transfer_type == "move":
+                        try:
+                            logger.info(f"移动模式，删除小文件：{event_path}")
+                            file_path.unlink()
+                            # 删除文件后立即检查并删除空目录
+                            self.__delete_empty_dirs(file_path.parent, mon_path)
+                        except Exception as e:
+                            logger.error(f"删除小文件失败：{event_path} - {str(e)}")
                     return
 
                 # 查询转移目的目录
@@ -439,7 +548,7 @@ class CloudLinkMonitor(_PluginBase):
                 target_dir = TransferDirectoryConf()
                 target_dir.library_path = target
                 target_dir.transfer_type = transfer_type
-                target_dir.scraping = False  # 禁用刮削
+                target_dir.scraping = self._scrape  # 启用刮削
                 target_dir.renaming = False  # 禁用重命名
                 target_dir.notify = self._notify
                 target_dir.overwrite_mode = self._overwrite_mode.get(mon_path) or 'never'
@@ -455,6 +564,12 @@ class CloudLinkMonitor(_PluginBase):
                 mediainfo = MediaInfo()
                 mediainfo.type = MediaType.UNKNOWN
                 mediainfo.title = file_path.stem
+
+                # 先进行刮削
+                if self._scrape:
+                    self.mediaChain.scrape_metadata(fileitem=file_item,
+                                                    meta=file_meta,
+                                                    mediainfo=mediainfo)
 
                 # 转移文件
                 transferinfo: TransferInfo = self.chain.transfer(fileitem=file_item,
@@ -477,6 +592,28 @@ class CloudLinkMonitor(_PluginBase):
                         )
                     return
 
+                # 处理对应的 .nfo 文件
+                nfo_path = file_path.with_suffix('.nfo')
+                if nfo_path.exists():
+                    try:
+                        if transferinfo.success:
+                            # 如果视频文件转移成功，也转移 .nfo 文件
+                            target_nfo_path = Path(transferinfo.target_path).with_suffix('.nfo')
+                            if transfer_type == "move":
+                                # 移动模式
+                                shutil.move(str(nfo_path), str(target_nfo_path))
+                                logger.info(f"移动 .nfo 文件：{nfo_path} -> {target_nfo_path}")
+                            else:
+                                # 其他模式（复制、硬链接等）
+                                shutil.copy2(str(nfo_path), str(target_nfo_path))
+                                logger.info(f"复制 .nfo 文件：{nfo_path} -> {target_nfo_path}")
+                        else:
+                            # 如果视频文件转移失败，删除 .nfo 文件
+                            nfo_path.unlink()
+                            logger.info(f"删除 .nfo 文件：{nfo_path}")
+                    except Exception as e:
+                        logger.error(f"处理 .nfo 文件失败：{nfo_path} - {str(e)}")
+
                 # 发送通知
                 if self._notify:
                     self.post_message(
@@ -487,14 +624,34 @@ class CloudLinkMonitor(_PluginBase):
 
                 # 移动模式删除空目录
                 if transfer_type == "move":
-                    for file_dir in file_path.parents:
-                        if len(str(file_dir)) <= len(str(Path(mon_path))):
-                            # 重要，删除到监控目录为止
+                    # 从文件所在目录开始向上遍历删除空目录
+                    current_dir = file_path.parent
+                    mon_path_obj = Path(mon_path)
+                    logger.info(f"开始检查并删除空目录，从 {current_dir} 开始")
+                    
+                    while current_dir != mon_path_obj and current_dir.is_relative_to(mon_path_obj):
+                        try:
+                            # 检查目录是否为空
+                            dir_contents = list(current_dir.iterdir())
+                            if not dir_contents:
+                                logger.info(f"目录为空，准备删除：{current_dir}")
+                                try:
+                                    shutil.rmtree(current_dir, ignore_errors=True)
+                                    logger.info(f"成功删除空目录：{current_dir}")
+                                except Exception as e:
+                                    logger.error(f"删除目录失败：{current_dir} - {str(e)}")
+                                # 继续检查父目录
+                                current_dir = current_dir.parent
+                                logger.info(f"继续检查父目录：{current_dir}")
+                            else:
+                                # 如果目录不为空则记录内容并停止
+                                logger.info(f"目录不为空，停止检查：{current_dir}")
+                                break
+                        except Exception as e:
+                            logger.error(f"检查目录失败：{current_dir} - {str(e)}")
                             break
-                        files = SystemUtils.list_files(file_dir, settings.RMT_MEDIAEXT + settings.DOWNLOAD_TMPEXT)
-                        if not files:
-                            logger.warn(f"移动模式，删除空目录：{file_dir}")
-                            shutil.rmtree(file_dir, ignore_errors=True)
+                    
+                    logger.info("空目录检查删除完成")
 
         except Exception as e:
             logger.error("目录监控发生错误：%s - %s" % (str(e), traceback.format_exc()))
@@ -756,6 +913,23 @@ class CloudLinkMonitor(_PluginBase):
                                     {
                                         'component': 'VTextField',
                                         'props': {
+                                            'model': 'min_size',
+                                            'label': '最小文件大小(MB)',
+                                            'placeholder': '100'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
                                             'model': 'min_duration',
                                             'label': '最小视频时长(分钟)',
                                             'placeholder': '15'
@@ -877,6 +1051,7 @@ class CloudLinkMonitor(_PluginBase):
             "monitor_dirs": "",
             "exclude_keywords": "",
             "interval": 10,
+            "min_size": 100,
             "min_duration": 15,
             "max_duration": 120,
             "min_resolution": "1920x1080"
@@ -904,4 +1079,34 @@ class CloudLinkMonitor(_PluginBase):
                 self._scheduler.shutdown()
                 self._event.clear()
             self._scheduler = None
+
+    def __delete_empty_dirs(self, start_dir: Path, mon_path: str):
+        """
+        递归删除空目录
+        :param start_dir: 开始检查的目录
+        :param mon_path: 监控目录
+        """
+        try:
+            current_dir = start_dir
+            mon_path_obj = Path(mon_path)
+            
+            while current_dir != mon_path_obj and current_dir.is_relative_to(mon_path_obj):
+                try:
+                    # 检查目录是否为空
+                    dir_contents = list(current_dir.iterdir())
+                    if not dir_contents:
+                        try:
+                            shutil.rmtree(current_dir, ignore_errors=True)
+                            logger.info(f"删除空目录：{current_dir}")
+                        except Exception as e:
+                            logger.error(f"删除目录失败：{current_dir} - {str(e)}")
+                        # 继续检查父目录
+                        current_dir = current_dir.parent
+                    else:
+                        break
+                except Exception as e:
+                    logger.error(f"检查目录失败：{current_dir} - {str(e)}")
+                    break
+        except Exception as e:
+            logger.error(f"删除空目录过程中发生错误：{str(e)}")
 
