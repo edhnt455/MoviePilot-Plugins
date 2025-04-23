@@ -90,7 +90,6 @@ class CloudLinkMonitor(_PluginBase):
     _enabled = False
     _notify = False
     _onlyonce = False
-    _scrape = False
     _category = False
     _refresh = False
     _softlink = False
@@ -140,7 +139,6 @@ class CloudLinkMonitor(_PluginBase):
             self._enabled = config.get("enabled")
             self._notify = config.get("notify")
             self._onlyonce = config.get("onlyonce")
-            self._scrape = config.get("scrape")
             self._category = config.get("category")
             self._refresh = config.get("refresh")
             self._mode = config.get("mode")
@@ -162,7 +160,7 @@ class CloudLinkMonitor(_PluginBase):
         if self._enabled or self._onlyonce:
             # 初始化实现类
             self._impl = CloudLinkMonitorImpl(config, self.systemconfig)
-            
+
             # 定时服务管理器
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
             if self._notify:
@@ -176,10 +174,10 @@ class CloudLinkMonitor(_PluginBase):
             if self._onlyonce:
                 logger.info("云盘实时监控服务启动，立即运行一次")
                 self._scheduler.add_job(name="云盘实时监控",
-                                      func=self._impl.sync_all, trigger='date',
-                                      run_date=datetime.datetime.now(
-                                          tz=pytz.timezone(settings.TZ)) + datetime.timedelta(seconds=3)
-                                      )
+                                        func=self._impl.sync_all, trigger='date',
+                                        run_date=datetime.datetime.now(
+                                            tz=pytz.timezone(settings.TZ)) + datetime.timedelta(seconds=3)
+                                        )
                 # 关闭一次性开关
                 self._onlyonce = False
                 # 保存配置
@@ -205,7 +203,6 @@ class CloudLinkMonitor(_PluginBase):
             "interval": self._interval,
             "softlink": self._softlink,
             "strm": self._strm,
-            "scrape": self._scrape,
             "category": self._category,
             "size": self._size,
             "refresh": self._refresh,
@@ -225,13 +222,13 @@ class CloudLinkMonitor(_PluginBase):
             if not event_data or event_data.get("action") != "cloud_link_sync":
                 return
             self.post_message(channel=event.event_data.get("channel"),
-                            title="开始同步云盘实时监控目录 ...",
-                            userid=event.event_data.get("user"))
+                              title="开始同步云盘实时监控目录 ...",
+                              userid=event.event_data.get("user"))
         if self._impl:
             self._impl.sync_all()
         if event:
             self.post_message(channel=event.event_data.get("channel"),
-                            title="云盘实时监控目录同步完成！", userid=event.event_data.get("user"))
+                              title="云盘实时监控目录同步完成！", userid=event.event_data.get("user"))
 
     def get_state(self) -> bool:
         return self._enabled

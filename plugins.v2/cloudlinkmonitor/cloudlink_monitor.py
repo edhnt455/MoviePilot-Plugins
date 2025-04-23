@@ -4,6 +4,8 @@ import re
 import shutil
 import threading
 import traceback
+import subprocess
+import json
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
 import xml.etree.ElementTree as ET
@@ -32,12 +34,56 @@ from app.schemas.types import EventType, MediaType, SystemConfigKey
 from app.utils.string import StringUtils
 from app.utils.system import SystemUtils
 
+def get_video_info(file_path: Path) -> Dict[str, Any]:
+    """
+    使用ffmpeg获取视频信息
+    """
+    try:
+        cmd = [
+            'ffprobe',
+            '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_format',
+            '-show_streams',
+            str(file_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"获取视频信息失败：{file_path}")
+            return None
+            
+        info = json.loads(result.stdout)
+        video_info = {
+            'duration': None,
+            'width': None,
+            'height': None
+        }
+        
+        # 获取视频流信息
+        for stream in info.get('streams', []):
+            if stream.get('codec_type') == 'video':
+                video_info['width'] = int(stream.get('width', 0))
+                video_info['height'] = int(stream.get('height', 0))
+                break
+                
+        # 获取时长
+        format_info = info.get('format', {})
+        if 'duration' in format_info:
+            video_info['duration'] = float(format_info['duration'])
+            
+        return video_info
+    except Exception as e:
+        logger.error(f"获取视频信息出错：{str(e)}")
+        return None
+
 lock = threading.Lock()
+
 
 class FileMonitorHandler(FileSystemEventHandler):
     """
     目录监控响应类
     """
+
     def __init__(self, monpath: str, sync: Any, **kwargs):
         super(FileMonitorHandler, self).__init__(**kwargs)
         self._watch_path = monpath
@@ -45,17 +91,19 @@ class FileMonitorHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         self.sync.event_handler(event=event, text="创建",
-                              mon_path=self._watch_path, event_path=event.src_path)
+                                mon_path=self._watch_path, event_path=event.src_path)
 
     def on_moved(self, event):
         self.sync.event_handler(event=event, text="移动",
-                              mon_path=self._watch_path, event_path=event.dest_path)
+                                mon_path=self._watch_path, event_path=event.dest_path)
+
 
 class CloudLinkMonitorImpl:
     """
     目录监控实现类
     """
-    def __init__(self, config: dict = None, systemconfig = None):
+
+    def __init__(self, config: dict = None, systemconfig=None):
         self.transferhis = TransferHistoryOper()
         self.downloadhis = DownloadHistoryOper()
         self.transferchian = TransferChain()
@@ -65,14 +113,14 @@ class CloudLinkMonitorImpl:
         self.filetransfer = FileManagerModule()
         self.systemconfig = systemconfig
         self.chain = TransferChain()
-        
+
         # 初始化配置
         self._dirconf = {}
         self._transferconf = {}
         self._overwrite_mode = {}
         self._medias = {}
         self._event = threading.Event()
-        
+
         # 读取配置
         if config:
             self._enabled = config.get("enabled")
@@ -102,7 +150,7 @@ class CloudLinkMonitorImpl:
         monitor_dirs = self._monitor_dirs.split("\n")
         if not monitor_dirs:
             return []
-            
+
         observers = []
         for mon_path in monitor_dirs:
             if not mon_path:
@@ -261,9 +309,9 @@ class CloudLinkMonitorImpl:
                         season_episode = f"{file_meta.season} {StringUtils.format_ep(episodes)}"
                     # 发送消息
                     self.transferchian.send_transfer_message(meta=file_meta,
-                                                           mediainfo=mediainfo,
-                                                           transferinfo=transferinfo,
-                                                           season_episode=season_episode)
+                                                             mediainfo=mediainfo,
+                                                             transferinfo=transferinfo,
+                                                             season_episode=season_episode)
                 # 发送完消息，移出key
                 del self._medias[medis_title_year_season]
                 continue
@@ -290,11 +338,6 @@ class CloudLinkMonitorImpl:
                 if self._exclude_keywords:
                     for keyword in self._exclude_keywords.split("\n"):
                         if keyword and re.findall(keyword, event_path):
-                            # 如果是.nfo文件，先跳过处理
-                            if file_path.suffix == '.nfo':
-                                logger.info(f"{event_path} 是.nfo文件，暂时跳过处理")
-                                return
-                            
                             logger.info(f"{event_path} 命中过滤关键字 {keyword}，将被删除")
                             try:
                                 file_path.unlink()
@@ -328,10 +371,8 @@ class CloudLinkMonitorImpl:
                 except Exception as e:
                     logger.error(f"获取文件大小失败: {file_path} - {str(e)}")
                     return
-                # nfo 文件不检查大小
-                if file_path.suffix == '.nfo':
-                    logger.debug(f"{event_path} 是 nfo 文件，跳过大小检查")
-                elif file_size_mb < self._min_size:
+
+                if file_size_mb < self._min_size:
                     logger.info(f"{event_path} 文件大小 {file_size_mb:.2f}MB 小于最小限制 {self._min_size}MB，将被删除")
                     try:
                         file_path.unlink()
@@ -348,24 +389,12 @@ class CloudLinkMonitorImpl:
                     return
 
                 # 检查视频信息
-                if file_path.suffix == '.nfo':
-                    logger.debug(f"{event_path} 是.nfo文件，跳过视频信息检查")
-                    return
                 check_result = self.__check_video_info(file_path)
                 if check_result is False:
                     # 如果是移动模式，直接删除不符合要求的视频
                     if self._transfer_type == "move":
                         try:
                             logger.info(f"移动模式，删除不符合要求的视频：{event_path}")
-                            # 先删除对应的nfo文件
-                            nfo_path = file_path.with_suffix('.nfo')
-                            if nfo_path.exists():
-                                try:
-                                    nfo_path.unlink()
-                                    logger.info(f"已删除对应的nfo文件：{nfo_path}")
-                                except Exception as e:
-                                    logger.error(f"删除nfo文件失败：{nfo_path} - {str(e)}")
-                            # 删除视频文件
                             file_path.unlink()
                             # 删除视频后检查并删除空目录
                             self.__delete_empty_dirs(file_path.parent, mon_path)
@@ -416,7 +445,7 @@ class CloudLinkMonitorImpl:
                 target_dir = TransferDirectoryConf()
                 target_dir.library_path = target
                 target_dir.transfer_type = transfer_type
-                target_dir.scraping = self._scrape  # 启用刮削
+                target_dir.scraping = False  # 禁用刮削
                 target_dir.renaming = False  # 禁用重命名
                 target_dir.notify = self._notify
                 target_dir.overwrite_mode = self._overwrite_mode.get(mon_path) or 'never'
@@ -429,21 +458,16 @@ class CloudLinkMonitorImpl:
 
                 # 创建基本的元数据信息
                 file_meta = MetaInfoPath(file_path)
+                logger.info(f"元数据信息：{file_meta}")
                 mediainfo = MediaInfo()
                 mediainfo.type = MediaType.UNKNOWN
                 mediainfo.title = file_path.stem
 
-                # 先进行刮削
-                if self._scrape:
-                    self.mediaChain.scrape_metadata(fileitem=file_item,
-                                                  meta=file_meta,
-                                                  mediainfo=mediainfo)
-
                 # 转移文件
                 transferinfo: TransferInfo = self.chain.transfer(fileitem=file_item,
-                                                               meta=file_meta,
-                                                               mediainfo=mediainfo,
-                                                               target_directory=target_dir)
+                                                                 meta=file_meta,
+                                                                 mediainfo=mediainfo,
+                                                                 target_directory=target_dir)
 
                 if not transferinfo:
                     logger.error("文件转移模块运行失败")
@@ -460,28 +484,6 @@ class CloudLinkMonitorImpl:
                         )
                     return
 
-                # 处理对应的 .nfo 文件
-                nfo_path = file_path.with_suffix('.nfo')
-                if nfo_path.exists():
-                    try:
-                        if transferinfo.success and hasattr(transferinfo, 'target_path'):
-                            # 如果视频文件转移成功，也转移 .nfo 文件
-                            target_nfo_path = Path(transferinfo.target_path).with_suffix('.nfo')
-                            if transfer_type == "move":
-                                # 移动模式
-                                shutil.move(str(nfo_path), str(target_nfo_path))
-                                logger.info(f"移动 .nfo 文件：{nfo_path} -> {target_nfo_path}")
-                            else:
-                                # 其他模式（复制、硬链接等）
-                                shutil.copy2(str(nfo_path), str(target_nfo_path))
-                                logger.info(f"复制 .nfo 文件：{nfo_path} -> {target_nfo_path}")
-                        else:
-                            # 如果视频文件转移失败，删除 .nfo 文件
-                            nfo_path.unlink()
-                            logger.info(f"删除 .nfo 文件：{nfo_path}")
-                    except Exception as e:
-                        logger.error(f"处理 .nfo 文件失败：{nfo_path} - {str(e)}")
-
                 # 发送通知
                 if self._notify:
                     self.post_message(
@@ -496,7 +498,7 @@ class CloudLinkMonitorImpl:
                     current_dir = file_path.parent
                     mon_path_obj = Path(mon_path)
                     logger.info(f"开始检查并删除空目录，从 {current_dir} 开始")
-                    
+
                     while current_dir != mon_path_obj and current_dir.is_relative_to(mon_path_obj):
                         try:
                             # 检查目录是否为空
@@ -518,148 +520,52 @@ class CloudLinkMonitorImpl:
                         except Exception as e:
                             logger.error(f"检查目录失败：{current_dir} - {str(e)}")
                             break
-                    
+
                     logger.info("空目录检查删除完成")
-
-                # 处理完媒体文件后，检查并删除命中了过滤关键字的.nfo文件
-                if self._exclude_keywords:
-                    for keyword in self._exclude_keywords.split("\n"):
-                        if keyword and re.findall(keyword, str(nfo_path)):
-                            logger.info(f"{nfo_path} 命中过滤关键字 {keyword}，将被删除")
-                            try:
-                                nfo_path.unlink()
-                                # 删除文件后检查并删除空目录
-                                self.__delete_empty_dirs(nfo_path.parent, mon_path)
-                                if self._notify:
-                                    self.post_message(
-                                        mtype=NotificationType.Manual,
-                                        title="文件已删除",
-                                        text=f"文件 {nfo_path.name} 命中过滤关键字 {keyword}"
-                                    )
-                            except Exception as e:
-                                logger.error(f"删除文件失败：{nfo_path} - {str(e)}")
-                            break
-
-                # 最后检查并删除所有命中了过滤关键字的.nfo文件
-                if self._exclude_keywords:
-                    for nfo_file in file_path.parent.glob("*.nfo"):
-                        for keyword in self._exclude_keywords.split("\n"):
-                            if keyword and re.findall(keyword, str(nfo_file)):
-                                logger.info(f"{nfo_file} 命中过滤关键字 {keyword}，将被删除")
-                                try:
-                                    nfo_file.unlink()
-                                    # 删除文件后检查并删除空目录
-                                    self.__delete_empty_dirs(nfo_file.parent, mon_path)
-                                    if self._notify:
-                                        self.post_message(
-                                            mtype=NotificationType.Manual,
-                                            title="文件已删除",
-                                            text=f"文件 {nfo_file.name} 命中过滤关键字 {keyword}"
-                                        )
-                                except Exception as e:
-                                    logger.error(f"删除文件失败：{nfo_file} - {str(e)}")
-                                break
 
         except Exception as e:
             logger.error("目录监控发生错误：%s - %s" % (str(e), traceback.format_exc()))
-
-    def __parse_nfo_file(self, file_path: Path) -> tuple:
-        """
-        解析nfo文件获取视频信息
-        """
-        nfo_path = file_path.with_suffix('.nfo')
-        if not nfo_path.exists():
-            logger.info(f"未找到nfo文件：{nfo_path}")
-            return None
-
-        try:
-            logger.info(f"开始解析nfo文件：{nfo_path}")
-            tree = ET.parse(nfo_path)
-            root = tree.getroot()
-            
-            # 获取时长（秒）
-            duration = None
-            runtime = root.find('.//runtime')
-            if runtime is not None and runtime.text:
-                try:
-                    # 尝试将分钟转换为秒
-                    duration = float(runtime.text) * 60
-                    logger.info(f"从nfo文件获取时长：{duration/60:.1f}分钟")
-                except ValueError:
-                    logger.warn(f"nfo文件时长格式错误：{runtime.text}")
-                    pass
-            else:
-                logger.warn(f"nfo文件未找到runtime节点或内容为空")
-
-            # 获取分辨率
-            width = None
-            height = None
-            streamdetails = root.find('.//streamdetails')
-            if streamdetails is not None:
-                video = streamdetails.find('.//video')
-                if video is not None:
-                    width_elem = video.find('width')
-                    height_elem = video.find('height')
-                    if width_elem is not None and width_elem.text:
-                        width = int(width_elem.text)
-                        logger.info(f"从nfo文件获取宽度：{width}")
-                    if height_elem is not None and height_elem.text:
-                        height = int(height_elem.text)
-                        logger.info(f"从nfo文件获取高度：{height}")
-                else:
-                    logger.warn("nfo文件未找到video节点")
-            else:
-                logger.warn("nfo文件未找到streamdetails节点")
-
-            if duration is not None and width is not None and height is not None:
-                logger.info(f"成功从nfo文件获取完整信息：{width}x{height} - {duration/60:.1f}分钟")
-                return duration, width, height
-            else:
-                logger.warn(f"nfo文件信息不完整：duration={duration}, width={width}, height={height}")
-                return None
-        except Exception as e:
-            logger.error(f"解析nfo文件失败：{nfo_path} - {str(e)}")
-            logger.error(f"错误详情：{traceback.format_exc()}")
-            return None
 
     def __check_video_info(self, file_path: Path) -> bool:
         """
         检查视频信息
         """
         try:
-            # 先尝试从nfo文件获取信息
+            # 使用ffmpeg获取视频信息
             logger.info(f"开始检查视频信息：{file_path}")
-            video_info = self.__parse_nfo_file(file_path)
-            if video_info:
-                duration, width, height = video_info
-                
-                logger.info(f"从nfo文件获取视频信息：{file_path} - {width}x{height} - {duration/60:.1f}分钟")
-                
-                # 检查时长
-                if duration < float(self._min_duration) * 60 or duration > float(self._max_duration) * 60:
-                    logger.info(f"视频时长不符合要求：{file_path} - {duration/60:.1f}分钟 (要求：{self._min_duration}-{self._max_duration}分钟)")
-                    return False
+            video_info = get_video_info(file_path)
+            if not video_info:
+                logger.error(f"无法获取视频信息：{file_path}")
+                return False
 
-                # 检查分辨率
-                min_width, min_height = map(int, self._min_resolution.split('x'))
-                if width < height:
-                    logger.info(f"竖屏视频：{file_path} - {width}x{height}")
-                    return False
-                if width * height < min_width * min_height:
-                    logger.info(f"分辨率不足：{file_path} - {width}x{height} (要求：{self._min_resolution})")
-                    return False
+            duration = video_info.get('duration')
+            width = video_info.get('width')
+            height = video_info.get('height')
 
-                logger.info(f"视频信息检查通过：{file_path}")
-                return True
-            else:
-                logger.info(f"未找到nfo文件或解析失败：{file_path}，将尝试其他方式获取信息")
-                # 这里可以添加其他获取视频信息的方式
-                return True  # 如果无法获取信息，返回True以保留文件
-                
+            logger.info(f"获取视频信息：{file_path} - {width}x{height} - {duration / 60:.1f}分钟")
+
+            # 检查时长
+            if duration < float(self._min_duration) * 60 or duration > float(self._max_duration) * 60:
+                logger.info(
+                    f"视频时长不符合要求：{file_path} - {duration / 60:.1f}分钟 (要求：{self._min_duration}-{self._max_duration}分钟)")
+                return False
+
+            # 检查分辨率
+            min_width, min_height = map(int, self._min_resolution.split('x'))
+            if width < height:
+                logger.info(f"竖屏视频：{file_path} - {width}x{height}")
+                return False
+            if width * height < min_width * min_height:
+                logger.info(f"分辨率不足：{file_path} - {width}x{height} (要求：{self._min_resolution})")
+                return False
+
+            logger.info(f"视频信息检查通过：{file_path}")
+            return True
+
         except Exception as e:
             logger.error(f"检查视频信息失败：{file_path} - {str(e)}")
             logger.error(f"错误详情：{traceback.format_exc()}")
-            return True  # 返回True以保留文件
+            return False
 
     def __delete_empty_dirs(self, start_dir: Path, mon_path: str):
         """
@@ -668,7 +574,7 @@ class CloudLinkMonitorImpl:
         try:
             current_dir = start_dir
             mon_path_obj = Path(mon_path)
-            
+
             while current_dir != mon_path_obj and current_dir.is_relative_to(mon_path_obj):
                 try:
                     # 检查目录是否为空
