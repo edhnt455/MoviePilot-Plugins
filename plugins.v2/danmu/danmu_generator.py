@@ -99,8 +99,7 @@ class DanmuAPI:
             return None
 
     @staticmethod
-    def get_comment_id(file_path: str, use_tmdb_id: bool = False, tmdb_id: Optional[int] = None,
-                       episode: Optional[int] = None) -> Optional[str]:
+    def get_comment_id(file_path: str, use_tmdb_id: bool = False, tmdb_id: Optional[int] = None, episode: Optional[int] = None, cache_ttl: Optional[int] = None) -> Optional[str]:
         """
         获取弹幕ID
         :param file_path: 视频文件路径
@@ -201,25 +200,16 @@ class DanmuConverter:
             return text  # 如果转换失败，返回原文本
 
     @staticmethod
-    def filter_comments(comments: List[Dict], max_comments: int = 2000) -> List[Dict]:
+    def filter_comments(comments: List[Dict]) -> List[Dict]:
         """
         过滤弹幕，先过滤乱码，再判断数量限制
         :param comments: 弹幕列表
-        :param max_comments: 最大弹幕数量，0表示不限制
         :return: 过滤后的弹幕列表
         """
-        # 确保max_comments是整数类型
-        try:
-            max_comments = int(max_comments)
-        except (ValueError, TypeError):
-            max_comments = 2000  # 如果转换失败，使用默认值
+        max_comments = 2000
 
         # 按时间排序
         sorted_comments = sorted(comments, key=lambda x: float(x['p'].split(',')[0]))
-
-        # 如果max_comments为0，表示不限制数量，直接返回
-        if max_comments == 0:
-            return sorted_comments
 
         # 首先过滤乱码
         valid_comments = []
@@ -351,15 +341,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         return possible_track
 
     @classmethod
-    def convert_comments_to_ass(cls, comments: List[Dict], output_file: str, width: int, height: int, fontface: str,
-                                fontsize: float, alpha: float, duration: float, convert_t_2_s: bool,
-                                subtitle_area_height: int = 150, max_comments: int = 2000):
+    def convert_comments_to_ass(cls, comments: List[Dict], output_file: str, width: int,
+                              height: int, fontface: str, fontsize: float, alpha: float, duration: float):
         styleid = 'Danmu'
         # 确保所有数值都是正确的类型
         width = int(width)
         height = int(height)
         fontsize = float(fontsize)
-        subtitle_area_height = int(subtitle_area_height)
+        subtitle_area_height = 150
 
         # 调整最大轨道数，使弹幕更密集
         max_tracks = int((height - subtitle_area_height) / (fontsize * 0.8))
@@ -367,8 +356,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         top_tracks = {}
         bottom_tracks = {}
 
+        # 统计信息
+        total_danmu_count = 0
+        bottom_danmu_count = 0
+        skipped_danmu_count = 0
+
         # 过滤弹幕
-        comments = cls.filter_comments(comments, max_comments)
+        comments = cls.filter_comments(comments)
 
         logger.info(f"{output_file} - 共匹配到{len(comments)}条弹幕。")
         
@@ -387,8 +381,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     color = int(p[2])
                     text = comment.get('m', '')
                     # 繁体转简体
-                    if convert_t_2_s:
-                        text = cls.convert_traditional_to_simplified(text)
+                    text = cls.convert_traditional_to_simplified(text)
                     user = str(p[3])
 
                     if not text:
@@ -409,31 +402,39 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         track_id = cls.find_non_overlapping_track(scrolling_tracks, timeline, max_tracks)
                         scrolling_tracks[track_id] = timeline + leave_time
                         initial_y = (track_id - 1) * fontsize + 10
-                        styles = f'\\move({width}, {initial_y}, {-len(text) * fontsize}, {initial_y})'
+                        styles = f'\\move({width}, {initial_y}, {-len(text)*fontsize}, {initial_y})'
                     elif pos == 4:  # 底部弹幕
                         bottom_danmu_count += 1
                         track_id = cls.find_non_overlapping_track(bottom_tracks, timeline, max_tracks)
+                        
                         # 计算弹幕的垂直位置，使用更小的间距
                         bottom_position = height - (track_id - 1) * fontsize * 0.8
+                        
                         # 如果启用防遮挡且弹幕位置在字幕区域内，跳过该弹幕
                         if subtitle_area_height > 0 and bottom_position > (height - subtitle_area_height):
                             skipped_danmu_count += 1
+                            logger.debug(f"跳过底部弹幕 - 位置{bottom_position}在字幕区域内，字幕区域高度{subtitle_area_height}")
                             continue
+                            
                         bottom_tracks[track_id] = timeline + duration
-                        styles = f'\\an2\\pos({width / 2}, {height - 50 - (track_id - 1) * fontsize})'
+                        # 调整底部弹幕位置，留出更多空间给字幕
+                        bottom_margin = 50 + (subtitle_area_height if subtitle_area_height > 0 else 0)
+                        styles = f'\\an2\\pos({width/2}, {height - bottom_margin - (track_id - 1) * fontsize * 0.8})'
                     elif pos == 5:  # 顶部弹幕
                         track_id = cls.find_non_overlapping_track(top_tracks, timeline, max_tracks)
                         top_tracks[track_id] = timeline + duration
-                        styles = f'\\an8\\pos({width / 2}, {50 + (track_id - 1) * fontsize})'
+                        styles = f'\\an8\\pos({width/2}, {50 + (track_id - 1) * fontsize})'
                     else:
                         styles = f'\\move(0, 0, {width}, 0)'
 
                     f.write(f'Dialogue: 0,{start_time},{end_time},{styleid},,0,0,0,,{{\\c{color_hex}{styles}}}{text}\n')
+                    total_danmu_count += 1
                 except Exception as e:
                     logger.error(f"处理弹幕数据失败: {e}, 弹幕数据: {comment}")
                     continue
 
-            logger.info('弹幕生成成功 - ' + output_file)
+            logger.info(f'弹幕生成成功 - {output_file}')
+            logger.info(f'弹幕统计: 总数{total_danmu_count}, 底部弹幕{bottom_danmu_count}, 跳过{skipped_danmu_count}条')
 
 class SubtitleProcessor:
     @staticmethod
@@ -490,8 +491,8 @@ class SubtitleProcessor:
         for root, _, files in os.walk(os.path.dirname(file_path)):
             for file in files:
                 if (file.endswith(('.srt', '.ass', '.ssa')) and
-                        'danmu' not in file and
-                        file.startswith(filename)):
+                    'danmu' not in file and
+                    file.startswith(filename)):
                     sub2 = os.path.join(root, file)
                     logger.info(f"找到字幕文件 - {sub2}")
                     return sub2
@@ -558,15 +559,13 @@ class SubtitleProcessor:
             logger.error(f"合并字幕失败: {e}")
             return False
 
-
 def danmu_generator(file_path: str, width: int = 1920, height: int = 1080,
-                    fontface: str = 'Arial', fontsize: float = 50,
-                    alpha: float = 0.8, duration: float = 6, onlyFromBili: bool = False,
-                    use_tmdb_id: bool = False, convert_t_2_s: bool = False, tmdb_id: Optional[int] = None,
-                    episode: Optional[int] = None, subtitle_area_height: int = 150,
-                    max_comments: int = 2000) -> Optional[str]:
+                   fontface: str = 'Arial', fontsize: float = 50,
+                   alpha: float = 0.8, duration: float = 6, onlyFromBili: bool = False,
+                   use_tmdb_id: bool = False, tmdb_id: Optional[int] = None,
+                   episode: Optional[int] = None, cache_ttl: Optional[int] = None) -> Optional[str]:
     try:
-        comment_id = DanmuAPI.get_comment_id(file_path, use_tmdb_id, tmdb_id, episode)
+        comment_id = DanmuAPI.get_comment_id(file_path, use_tmdb_id, tmdb_id, episode, cache_ttl)
         if not comment_id:
             logger.info(f"未找到对应弹幕 - {file_path}")
             return None
@@ -595,10 +594,7 @@ def danmu_generator(file_path: str, width: int = 1920, height: int = 1080,
             fontface=fontface,
             fontsize=float(fontsize),
             alpha=float(alpha),
-            duration=float(duration),
-            convert_t_2_s=convert_t_2_s,
-            subtitle_area_height=subtitle_area_height,
-            max_comments=max_comments
+            duration=float(duration)
         )
 
         sub2 = SubtitleProcessor.find_subtitle_file(file_path)
