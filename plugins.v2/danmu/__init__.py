@@ -18,7 +18,7 @@ import subprocess
 import os
 import threading
 from app.plugins.danmu import danmu_generator as generator
-
+    
 
 class Danmu(_PluginBase):
     # 插件名称
@@ -56,9 +56,9 @@ class Danmu(_PluginBase):
     _max_threads = 10
     _onlyFromBili = False
     _useTmdbID = True
-
+    
     media_chain = MediaChain()
-
+    
     def init_plugin(self, config: dict = None):
         if config:
             self._enabled = config.get("enabled", False)
@@ -74,11 +74,11 @@ class Danmu(_PluginBase):
             self._useTmdbID = config.get("useTmdbID", True)
         if self._enabled:
             logger.info("弹幕加载插件已启用")
-
+            
 
     def get_state(self) -> bool:
         return self._enabled
-
+    
     def get_service(self) -> List[Dict[str, Any]]:
         """
         注册插件公共服务
@@ -100,7 +100,7 @@ class Danmu(_PluginBase):
                 "kwargs": {}
             }]
         return []
-
+        
     @staticmethod
     def get_command() -> List[Dict[str, Any]]:
         pass
@@ -128,7 +128,7 @@ class Danmu(_PluginBase):
             "summary": "更新路径",
             "description": "更新刮削路径"
         }]
-
+    
     # 插件配置页面
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """
@@ -211,7 +211,7 @@ class Danmu(_PluginBase):
                                             'model': 'width',
                                             'label': '宽度，默认1920',
                                             'type': 'number',
-
+                                        
                                         }
                                     }
                                 ]
@@ -228,7 +228,7 @@ class Danmu(_PluginBase):
                                             'model': 'height',
                                             'label': '高度，默认1080',
                                             'type': 'number',
-
+                                       
                                         }
                                     }
                                 ]
@@ -250,7 +250,7 @@ class Danmu(_PluginBase):
                                             'model': 'fontsize',
                                             'label': '字体大小，默认50',
                                             'type': 'number',
-
+                                        
                                         }
                                     }
                                 ]
@@ -267,7 +267,7 @@ class Danmu(_PluginBase):
                                             'model': 'alpha',
                                             'label': '弹幕透明度，默认0.8',
                                             'type': 'number',
-
+                                            
                                         }
                                     }
                                 ]
@@ -289,7 +289,7 @@ class Danmu(_PluginBase):
                                             'model': 'duration',
                                             'label': '弹幕持续时间 默认10秒',
                                             'type': 'number',
-
+                                     
                                         }
                                     }
                                 ]
@@ -306,7 +306,7 @@ class Danmu(_PluginBase):
                             #                 'model': 'cron',
                             #                 'label': '取消定期刮削，需要全局刮削请去 设置->服务 手动启动',
                             #                 'type': 'text',
-
+                                     
                             #             }
                             #         }
                             #     ]
@@ -394,7 +394,7 @@ class Danmu(_PluginBase):
 
     def get_page(self) -> List[dict]:
         pass
-
+            
         return [
             {
                 'component': 'VForm',
@@ -528,7 +528,7 @@ class Danmu(_PluginBase):
                 ]
             }
         ]
-
+    
     def generate_danmu(self, file_path: str) -> Optional[str]:
         """
         生成弹幕文件
@@ -557,7 +557,7 @@ class Danmu(_PluginBase):
                     except ValueError:
                         logger.warning(f"无效的发布日期格式: {release_date},使用默认缓存时间")
 
-
+    
         try:
             return generator.danmu_generator(
                 file_path,
@@ -583,7 +583,7 @@ class Danmu(_PluginBase):
         """
         self._path = path
         logger.info(f"更新路径: {self._path}")
-
+        
     def generate_danmu_global(self):
         """
         全局刮削弹幕
@@ -640,7 +640,7 @@ class Danmu(_PluginBase):
 
         logger.info("弹幕刮削完成")
         return schemas.Response(success=True, message="弹幕刮削完成 ")
-
+    
     @eventmanager.register(EventType.TransferComplete)
     def generate_danmu_after_transfer(self, event):
         """
@@ -677,7 +677,7 @@ class Danmu(_PluginBase):
         try:
             raw_data = __to_dict(event.event_data)
             target_file = raw_data.get("transferinfo", {}).get("file_list_new", [None])[0]
-
+            
             if not target_file:
                 logger.warning("未找到目标文件")
                 return

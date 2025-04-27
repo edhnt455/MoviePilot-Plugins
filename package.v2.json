@@ -36,12 +36,13 @@
     "Danmu": {
         "name": "弹幕刮削",
         "description": "使用弹弹play平台生成弹幕的字幕文件，实现弹幕播放。",
-        "version": "1.1.16",
+        "version": "1.2.0",
         "icon": "https://raw.githubusercontent.com/HankunYu/MoviePilot-Plugins/main/icons/danmu.png",
         "color": "#3B5E8E",
         "author": "hankun",
         "level": 1,
         "history": {
+            "v1.2.0": "针对新番（90天内发布的媒体资源）使用较短时间缓存以获取最新弹幕数据",
             "v1.1.16": "增加简繁转换、字幕防遮挡、定时更新（未完善）、弹幕过滤等功能",
             "v1.1.15": "增加根据路径刮削弹幕功能。增加单文件路径刮削。能力有限无法在同一个页面实现按钮功能……",
             "v1.1.13": "先检查当前目录下有没有.id结尾的文件 如果有，则获取文件名作为弹幕ID（如190270001 则使用19027.id)。如果需要请访问 https://dandanapi.hankun.online/docs 尝试获取epsoide id。",
@@ -69,5 +70,45 @@
         "author": "hankun",
         "level": 99,
         "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyNe4GKw15qXHWAYBhHDlUDxM7MfrdmstwRoTtn+PNK9uvpsZip1/R6azzJi4hHLsEOvVLyfjjaEVDyZrJVGTxC+Fj+6JFrq4LnwB0CHlbXAN+UkMk3uD/srRx3eOVSZuqoCDplsX98DUim5Vx/xzyoRSwbWqMJvYsIawaKO9yZyA7ErjmyNOk1jduy1FYLISzyICtz0ubYsohzUZxbcZgqb+qBeECv0SofSMM+luvIHiqTPPMRKmjD6WufGerwm7r9r26coG5CvYgOX+jOJITIpAqXkAqqXNNoVCuTRazxF/OJFjbTsJLO1WnyIr6qB6oQW/7XgLk0Ot5M1Jx2JW/QIDAQAB"
-    }
+    },
+	 "CloudLinkMonitor": {
+        "name": "目录实时监控",
+        "description": "监控云盘目录文件变化，自动转移媒体文件。",
+        "labels": "云盘,工具",
+        "version": "2.6.0",
+        "icon": "Linkease_A.png",
+        "author": "edhnt455",
+        "level": 1,
+        "history": {
+          "v2.6.0": "自用更新",
+          "v2.5.8": "fix bug",
+          "v2.5.7": "修复获取目录设置配置",
+          "v2.5.6": "修复软连接",
+          "v2.5.5": "修复目录设置未配置媒体库目录的场景",
+          "v2.5.4": "默认取目录设置，可自定义覆盖方式",
+          "v2.5.3": "支持自定义开启二级分类",
+          "v2.5.2": "支持联动[云盘Strm]相关插件",
+          "v2.5.1": "修复媒体刮削",
+          "v2.5": "兼容v2",
+          "v2.4.5": "联动实时软连接插件（近媒体文件）",
+          "v2.4.4": "修复刷新媒体库",
+          "v2.4.3": "可选转移完刷新媒体库",
+          "v2.4.2": "fix #65",
+          "v2.4.1": "增加log",
+          "v2.4": "修复二级目录",
+          "v2.3": "去除无效变量",
+          "v2.2": "优化配置一二级分类流程",
+          "v2.1": "可配置是否存储转移记录",
+          "v2.0": "修复不刮削不生效bug",
+          "v1.8": "fix S00转移",
+          "v1.7": "fix 刮削",
+          "v1.6": "可配置是否刮削",
+          "v1.5": "fix 消息推送",
+          "v1.4": "fix 转移后路径",
+          "v1.3": "修复bug",
+          "v1.2": "修复订阅重复处理的bug",
+          "v1.1": "自动转移链接（不刮削）",
+          "v1.0": "监控云盘目录文件变化，按原文件名软连接"
+        }
+	}
 }
