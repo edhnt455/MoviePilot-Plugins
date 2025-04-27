@@ -174,7 +174,7 @@ class DanmuAPI:
         :return: 弹幕数据
         """
         try:
-            url = f"{cls.BASE_URL}/{comment_id}?from_id=0&with_related=true&ch_convert=0"
+            url = f"{cls.BASE_URL}/{comment_id}?from_id=0&with_related=true&ch_convert=1"
             response = requests.get(url, headers=cls.HEADERS)
             if response.status_code == 200:
                 return response.json()
@@ -185,20 +185,6 @@ class DanmuAPI:
             return None
 
 class DanmuConverter:
-    @staticmethod
-    def convert_traditional_to_simplified(text: str) -> str:
-        """
-        将繁体中文转换为简体中文
-        :param text: 要转换的文本
-        :return: 转换后的简体中文文本
-        """
-        try:
-            converter = opencc.OpenCC('t2s')  # t2s表示繁体转简体
-            return converter.convert(text)
-        except Exception as e:
-            logger.error(f"繁体转简体失败: {e}")
-            return text  # 如果转换失败，返回原文本
-
     @staticmethod
     def filter_comments(comments: List[Dict]) -> List[Dict]:
         """
@@ -380,8 +366,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     pos = int(p[1])
                     color = int(p[2])
                     text = comment.get('m', '')
-                    # 繁体转简体
-                    text = cls.convert_traditional_to_simplified(text)
                     user = str(p[3])
 
                     if not text:
