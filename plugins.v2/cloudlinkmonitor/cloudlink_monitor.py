@@ -338,7 +338,6 @@ class CloudLinkMonitorImpl:
                 if self._exclude_keywords:
                     for keyword in self._exclude_keywords.split("\n"):
                         if keyword and re.findall(keyword, event_path):
-                            logger.info(f"{event_path} 命中过滤关键字 {keyword}，将被删除")
                             try:
                                 file_path.unlink()
                                 # 删除文件后检查并删除空目录
@@ -360,20 +359,17 @@ class CloudLinkMonitorImpl:
                         if not keyword:
                             continue
                         if keyword and re.search(r"%s" % keyword, event_path, re.IGNORECASE):
-                            logger.info(f"{event_path} 命中整理屏蔽词 {keyword}，不处理")
                             return
 
                 # 检查文件大小
                 try:
                     file_size_bytes = os.path.getsize(file_path)
                     file_size_mb = file_size_bytes / (1024 * 1024)
-                    logger.info(f"文件 {file_path} 实际大小: {file_size_mb:.2f}MB")
                 except Exception as e:
                     logger.error(f"获取文件大小失败: {file_path} - {str(e)}")
                     return
 
                 if file_size_mb < self._min_size:
-                    logger.info(f"{event_path} 文件大小 {file_size_mb:.2f}MB 小于最小限制 {self._min_size}MB，将被删除")
                     try:
                         file_path.unlink()
                         # 删除文件后检查并删除空目录
@@ -394,7 +390,6 @@ class CloudLinkMonitorImpl:
                     # 如果是移动模式，直接删除不符合要求的视频
                     if self._transfer_type == "move":
                         try:
-                            logger.info(f"移动模式，删除不符合要求的视频：{event_path}")
                             file_path.unlink()
                             # 删除视频后检查并删除空目录
                             self.__delete_empty_dirs(file_path.parent, mon_path)
@@ -408,7 +403,6 @@ class CloudLinkMonitorImpl:
                     # 如果是移动模式，直接删除非媒体文件
                     if self._transfer_type == "move":
                         try:
-                            logger.info(f"移动模式，删除非媒体文件：{event_path}")
                             file_path.unlink()
                             # 删除文件后立即检查并删除空目录
                             self.__delete_empty_dirs(file_path.parent, mon_path)
@@ -418,11 +412,9 @@ class CloudLinkMonitorImpl:
 
                 # 判断文件大小
                 if self._size and float(self._size) > 0 and file_path.stat().st_size < float(self._size) * 1024 ** 3:
-                    logger.info(f"{file_path} 文件大小小于监控文件大小，不处理")
                     # 如果是移动模式，直接删除小文件
                     if self._transfer_type == "move":
                         try:
-                            logger.info(f"移动模式，删除小文件：{event_path}")
                             file_path.unlink()
                             # 删除文件后立即检查并删除空目录
                             self.__delete_empty_dirs(file_path.parent, mon_path)
@@ -458,7 +450,6 @@ class CloudLinkMonitorImpl:
 
                 # 创建基本的元数据信息
                 file_meta = MetaInfoPath(file_path)
-                logger.info(f"元数据信息：{file_meta}")
                 mediainfo = MediaInfo()
                 mediainfo.type = MediaType.UNKNOWN
                 mediainfo.title = file_path.stem
@@ -497,14 +488,12 @@ class CloudLinkMonitorImpl:
                     # 从文件所在目录开始向上遍历删除空目录
                     current_dir = file_path.parent
                     mon_path_obj = Path(mon_path)
-                    logger.info(f"开始检查并删除空目录，从 {current_dir} 开始")
 
                     while current_dir != mon_path_obj and current_dir.is_relative_to(mon_path_obj):
                         try:
                             # 检查目录是否为空
                             dir_contents = list(current_dir.iterdir())
                             if not dir_contents:
-                                logger.info(f"目录为空，准备删除：{current_dir}")
                                 try:
                                     shutil.rmtree(current_dir, ignore_errors=True)
                                     logger.info(f"成功删除空目录：{current_dir}")
@@ -512,7 +501,6 @@ class CloudLinkMonitorImpl:
                                     logger.error(f"删除目录失败：{current_dir} - {str(e)}")
                                 # 继续检查父目录
                                 current_dir = current_dir.parent
-                                logger.info(f"继续检查父目录：{current_dir}")
                             else:
                                 # 如果目录不为空则记录内容并停止
                                 logger.info(f"目录不为空，停止检查：{current_dir}")
