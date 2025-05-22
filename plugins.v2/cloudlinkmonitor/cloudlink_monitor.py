@@ -524,7 +524,7 @@ class CloudLinkMonitorImpl:
             video_info = get_video_info(file_path)
             if not video_info:
                 logger.error(f"无法获取视频信息：{file_path}")
-                return False
+                return True
 
             duration = video_info.get('duration')
             width = video_info.get('width')
