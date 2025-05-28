@@ -153,6 +153,7 @@ class CloudLinkMonitor(_PluginBase):
             self._min_duration = config.get("min_duration") or 15
             self._max_duration = config.get("max_duration") or 120
             self._min_resolution = config.get("min_resolution") or "1920x1080"
+            self._cron = config.get("cron")
 
         # 停止现有任务
         self.stop_service()
@@ -209,7 +210,8 @@ class CloudLinkMonitor(_PluginBase):
             "min_size": self._min_size,
             "min_duration": self._min_duration,
             "max_duration": self._max_duration,
-            "min_resolution": self._min_resolution
+            "min_resolution": self._min_resolution,
+            "cron": self._cron
         })
 
     @eventmanager.register(EventType.PluginAction)
@@ -481,6 +483,23 @@ class CloudLinkMonitor(_PluginBase):
                                         }
                                     }
                                 ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'cron',
+                                            'label': '定时执行',
+                                            'placeholder': '0 0 * * *'
+                                        }
+                                    }
+                                ]
                             }
                         ]
                     },
@@ -544,7 +563,7 @@ class CloudLinkMonitor(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '消息延迟默认10s，如网络较慢可酌情调大。'
+                                            'text': '消息延迟默认10s，如网络较慢可酌情调大。\n定时执行格式为cron表达式，如：0 0 * * * 表示每天0点执行一次。'
                                         }
                                     }
                                 ]
@@ -565,7 +584,8 @@ class CloudLinkMonitor(_PluginBase):
             "min_size": 100,
             "min_duration": 15,
             "max_duration": 120,
-            "min_resolution": "1920x1080"
+            "min_resolution": "1920x1080",
+            "cron": ""
         }
 
     def get_page(self) -> List[dict]:

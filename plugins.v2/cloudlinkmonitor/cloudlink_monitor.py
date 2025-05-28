@@ -34,10 +34,62 @@ from app.schemas.types import EventType, MediaType, SystemConfigKey
 from app.utils.string import StringUtils
 from app.utils.system import SystemUtils
 
+def get_video_info_from_nfo(file_path: Path) -> Optional[Dict[str, Any]]:
+    """
+    从NFO文件获取视频信息
+    """
+    try:
+        logger.error(f"从NFO文件获取视频信息")
+        # 构建NFO文件路径
+        nfo_path = file_path.with_suffix('.nfo')
+        if not nfo_path.exists():
+            return None
+            
+        # 解析NFO文件
+        tree = ET.parse(nfo_path)
+        root = tree.getroot()
+        
+        # 获取视频信息
+        video_info = {
+            'duration': None,
+            'width': None,
+            'height': None
+        }
+        
+        # 尝试从runtime获取时长
+        runtime = root.find('runtime')
+        if runtime is not None and runtime.text:
+            video_info['duration'] = float(runtime.text) * 60  # 转换为秒
+            
+        # 从fileinfo获取详细信息
+        fileinfo = root.find('fileinfo/streamdetails/video')
+        if fileinfo is not None:
+            width = fileinfo.find('width')
+            height = fileinfo.find('height')
+            duration = fileinfo.find('durationinseconds')
+            
+            if width is not None and width.text:
+                video_info['width'] = int(width.text)
+            if height is not None and height.text:
+                video_info['height'] = int(height.text)
+            if duration is not None and duration.text:
+                video_info['duration'] = float(duration.text)
+                
+        return video_info
+    except Exception as e:
+        logger.error(f"从NFO文件获取视频信息失败：{str(e)}")
+        return None
+
 def get_video_info(file_path: Path) -> Dict[str, Any]:
     """
-    使用ffmpeg获取视频信息
+    获取视频信息，优先从NFO文件读取，如果没有则使用ffmpeg获取
     """
+    # 首先尝试从NFO文件获取信息
+    video_info = get_video_info_from_nfo(file_path)
+    if video_info and all(v is not None for v in video_info.values()):
+        return video_info
+        
+    # 如果NFO文件不存在或信息不完整，使用ffmpeg获取
     try:
         cmd = [
             'ffprobe',
@@ -244,13 +296,92 @@ class CloudLinkMonitorImpl:
         logger.info("开始全量同步云盘实时监控目录 ...")
         # 遍历所有监控目录
         for mon_path in self._dirconf.keys():
-            logger.info(f"开始处理监控目录 {mon_path} ...")
-            list_files = SystemUtils.list_files(Path(mon_path), settings.RMT_MEDIAEXT)
-            logger.info(f"监控目录 {mon_path} 共发现 {len(list_files)} 个文件")
+            # 获取目标目录
+            target: Path = self._dirconf.get(mon_path)
+            if not target:
+                logger.error(f"未配置监控目录 {mon_path} 的目的目录")
+                continue
+                
+            # 确保目标目录存在
+            target.mkdir(parents=True, exist_ok=True)
+            
             # 遍历目录下所有文件
-            for file_path in list_files:
-                logger.info(f"开始处理文件 {file_path} ...")
-                self.__handle_file(event_path=str(file_path), mon_path=mon_path)
+            for root, dirs, files in os.walk(mon_path):
+                
+                for file in files:
+                    file_path = Path(os.path.join(root, file))
+                    
+                    # 跳过.nfo文件，等待处理对应的视频文件时再处理
+                    if file_path.suffix.lower() == '.nfo':
+                        continue
+                        
+                    # 检查文件扩展名
+                    if file_path.suffix.lower() not in ['.mp4', '.avi', '.mkv']:
+                        try:
+                            file_path.unlink()
+                            logger.info(f"删除非视频文件：{file_path}")
+                            # 删除文件后立即检查并删除空目录
+                            self.__delete_empty_dirs(file_path.parent, mon_path)
+                        except Exception as e:
+                            logger.error(f"删除文件失败：{file_path} - {str(e)}")
+                        continue
+                    
+                    # 检查视频信息
+                    if not self.__check_video_info(file_path):
+                        try:
+                            # 删除视频文件
+                            file_path.unlink()
+                            logger.info(f"删除不符合要求的视频：{file_path}")
+                            
+                            # 尝试删除对应的.nfo文件
+                            nfo_path = file_path.with_suffix('.nfo')
+                            if nfo_path.exists():
+                                try:
+                                    nfo_path.unlink()
+                                    logger.info(f"删除对应的NFO文件：{nfo_path}")
+                                except Exception as e:
+                                    logger.error(f"删除NFO文件失败：{nfo_path} - {str(e)}")
+                            
+                            # 删除文件后立即检查并删除空目录
+                            self.__delete_empty_dirs(file_path.parent, mon_path)
+                        except Exception as e:
+                            logger.error(f"删除文件失败：{file_path} - {str(e)}")
+                        continue
+                    
+                    # 移动文件到目标目录
+                    try:
+                        target_file = target / file_path.name
+                        if self._transfer_type == "move":
+                            shutil.move(str(file_path), str(target_file))
+                            logger.info(f"移动文件：{file_path} -> {target_file}")
+                            
+                            # 移动对应的.nfo文件
+                            nfo_path = file_path.with_suffix('.nfo')
+                            if nfo_path.exists():
+                                try:
+                                    target_nfo = target / nfo_path.name
+                                    shutil.move(str(nfo_path), str(target_nfo))
+                                except Exception as e:
+                                    logger.error(f"移动NFO文件失败：{nfo_path} - {str(e)}")
+                            
+                            # 移动文件后立即检查并删除空目录
+                            self.__delete_empty_dirs(file_path.parent, mon_path)
+                        else:
+                            shutil.copy2(str(file_path), str(target_file))
+                            logger.info(f"复制文件：{file_path} -> {target_file}")
+                            
+                            # 复制对应的.nfo文件
+                            nfo_path = file_path.with_suffix('.nfo')
+                            if nfo_path.exists():
+                                try:
+                                    target_nfo = target / nfo_path.name
+                                    shutil.copy2(str(nfo_path), str(target_nfo))
+                                except Exception as e:
+                                    logger.error(f"复制NFO文件失败：{nfo_path} - {str(e)}")
+                    except Exception as e:
+                        logger.error(f"移动/复制文件失败：{file_path} - {str(e)}")
+                        continue
+            
         logger.info("全量同步云盘实时监控目录完成！")
 
     def send_msg(self):
@@ -558,24 +689,40 @@ class CloudLinkMonitorImpl:
     def __delete_empty_dirs(self, start_dir: Path, mon_path: str):
         """
         递归删除空目录
+        当目录下没有视频文件时也视为空目录
         """
         try:
             current_dir = start_dir
             mon_path_obj = Path(mon_path)
+            logger.info(f"开始检查目录：{current_dir}")
 
             while current_dir != mon_path_obj and current_dir.is_relative_to(mon_path_obj):
                 try:
-                    # 检查目录是否为空
+                    # 检查目录内容
                     dir_contents = list(current_dir.iterdir())
-                    if not dir_contents:
+                    logger.info(f"目录 {current_dir} 内容：{[item.name for item in dir_contents]}")
+                    
+                    # 检查是否包含视频文件
+                    has_video = False
+                    for item in dir_contents:
+                        if item.is_file() and item.suffix.lower() in ['.mp4', '.avi', '.mkv']:
+                            has_video = True
+                            logger.info(f"目录 {current_dir} 包含视频文件：{item.name}")
+                            break
+                    
+                    # 如果目录为空或没有视频文件，则删除
+                    if not dir_contents or not has_video:
                         try:
                             shutil.rmtree(current_dir, ignore_errors=True)
-                            logger.info(f"删除空目录：{current_dir}")
+                            logger.info(f"删除空目录或无视频目录：{current_dir}")
                         except Exception as e:
                             logger.error(f"删除目录失败：{current_dir} - {str(e)}")
                         # 继续检查父目录
                         current_dir = current_dir.parent
+                        logger.info(f"继续检查父目录：{current_dir}")
                     else:
+                        # 如果目录不为空且包含视频文件，则停止检查
+                        logger.info(f"目录包含视频文件，停止检查：{current_dir}")
                         break
                 except Exception as e:
                     logger.error(f"检查目录失败：{current_dir} - {str(e)}")
