@@ -74,8 +74,8 @@
         "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyNe4GKw15qXHWAYBhHDlUDxM7MfrdmstwRoTtn+PNK9uvpsZip1/R6azzJi4hHLsEOvVLyfjjaEVDyZrJVGTxC+Fj+6JFrq4LnwB0CHlbXAN+UkMk3uD/srRx3eOVSZuqoCDplsX98DUim5Vx/xzyoRSwbWqMJvYsIawaKO9yZyA7ErjmyNOk1jduy1FYLISzyICtz0ubYsohzUZxbcZgqb+qBeECv0SofSMM+luvIHiqTPPMRKmjD6WufGerwm7r9r26coG5CvYgOX+jOJITIpAqXkAqqXNNoVCuTRazxF/OJFjbTsJLO1WnyIr6qB6oQW/7XgLk0Ot5M1Jx2JW/QIDAQAB"
     },
 	 "CloudLinkMonitor": {
-        "name": "目录实时监控",
-        "description": "监控云盘目录文件变化，自动转移媒体文件。",
+        "name": "目录定时监控",
+        "description": "定时扫描目录文件变化，自动转移媒体文件。",
         "labels": "云盘,工具",
         "version": "2.6.0",
         "icon": "Linkease_A.png",
