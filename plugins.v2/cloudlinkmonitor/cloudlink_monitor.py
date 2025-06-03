@@ -282,12 +282,9 @@ class CloudLinkMonitorImpl:
 
     def event_handler(self, event, mon_path: str, text: str, event_path: str):
         """
-        处理文件变化
+        处理文件变化，此功能已禁用
         """
-        if not event.is_directory:
-            # 文件发生变化
-            logger.debug("文件%s：%s" % (text, event_path))
-            self.__handle_file(event_path=event_path, mon_path=mon_path)
+        pass
 
     def sync_all(self):
         """
