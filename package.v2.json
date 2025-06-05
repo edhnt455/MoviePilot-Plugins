@@ -77,11 +77,12 @@
         "name": "按需转移视频文件",
         "description": "定时扫描目录文件变化，按需（分辨率、时长）转移视频文件。",
         "labels": "工具",
-        "version": "1.0.0",
-        "icon": "https://raw.githubusercontent.com/edhnt455/MoviePilot-Plugins/blob/main/icons/VideoTransition.png",
+        "version": "1.0.1",
+        "icon": "https://raw.githubusercontent.com/edhnt455/MoviePilot-Plugins/main/icons/VideoTransition.png",
         "author": "edhnt455",
         "level": 1,
         "history": {
+          "v1.0.1": "修复图标，优化日志记录",
           "v1.0": "自用第一版"
         }
 	}
