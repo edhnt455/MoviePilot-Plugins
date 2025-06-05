@@ -7,7 +7,7 @@ import traceback
 import subprocess
 import json
 from pathlib import Path
-from typing import List, Tuple, Dict, Any, Optional
+from typing import Dict, Any, Optional
 import xml.etree.ElementTree as ET
 
 import pytz
@@ -150,7 +150,7 @@ class FileMonitorHandler(FileSystemEventHandler):
                                 mon_path=self._watch_path, event_path=event.dest_path)
 
 
-class CloudLinkMonitorImpl:
+class VideoTransitionImpl:
     """
     目录监控实现类
     """

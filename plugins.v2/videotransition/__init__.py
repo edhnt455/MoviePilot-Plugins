@@ -1,12 +1,7 @@
 import datetime
-import os
-import re
-import shutil
 import threading
-import traceback
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
-import xml.etree.ElementTree as ET
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -35,7 +30,7 @@ from app.schemas.types import EventType, MediaType, SystemConfigKey
 from app.utils.string import StringUtils
 from app.utils.system import SystemUtils
 
-from .cloudlink_monitor import CloudLinkMonitorImpl
+from .video_transition import VideoTransitionImpl
 
 lock = threading.Lock()
 
@@ -59,21 +54,21 @@ class FileMonitorHandler(FileSystemEventHandler):
                                 mon_path=self._watch_path, event_path=event.dest_path)
 
 
-class CloudLinkMonitor(_PluginBase):
+class VideoTransition(_PluginBase):
     # 插件名称
-    plugin_name = "目录实时监控"
+    plugin_name = "按需转移视频文件"
     # 插件描述
-    plugin_desc = "监控目录文件变化，自动转移媒体文件。"
+    plugin_desc = "定时扫描目录文件变化，按需（分辨率、时长）转移视频文件。"
     # 插件图标
-    plugin_icon = "Linkease_A.png"
+    plugin_icon = "https://raw.githubusercontent.com/edhnt455/MoviePilot-Plugins/blob/main/icons/VideoTransition.png"
     # 插件版本
-    plugin_version = "2.6.0"
+    plugin_version = "1.0.0"
     # 插件作者
     plugin_author = "edhnt455"
     # 作者主页
     author_url = "https://github.com/edhnt455"
     # 插件配置项ID前缀
-    plugin_config_prefix = "cloudlinkmonitor_"
+    plugin_config_prefix = "videotransition_"
     # 加载顺序
     plugin_order = 4
     # 可使用的用户级别
@@ -160,7 +155,7 @@ class CloudLinkMonitor(_PluginBase):
 
         if self._enabled or self._onlyonce:
             # 初始化实现类
-            self._impl = CloudLinkMonitorImpl(config, self.systemconfig)
+            self._impl = VideoTransitionImpl(config, self.systemconfig)
 
             # 定时服务管理器
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
@@ -273,7 +268,7 @@ class CloudLinkMonitor(_PluginBase):
         """
         if self._enabled and self._cron:
             return [{
-                "id": "CloudLinkMonitor",
+                "id": "VideoTransition",
                 "name": "云盘实时监控全量同步服务",
                 "trigger": CronTrigger.from_crontab(self._cron),
                 "func": self._impl.sync_all if self._impl else None,
@@ -323,22 +318,6 @@ class CloudLinkMonitor(_PluginBase):
                                     {
                                         'component': 'VSwitch',
                                         'props': {
-                                            'model': 'notify',
-                                            'label': '发送通知',
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
                                         }
@@ -350,26 +329,6 @@ class CloudLinkMonitor(_PluginBase):
                     {
                         'component': 'VRow',
                         'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSelect',
-                                        'props': {
-                                            'model': 'mode',
-                                            'label': '监控模式',
-                                            'items': [
-                                                {'title': '兼容模式', 'value': 'compatibility'},
-                                                {'title': '性能模式', 'value': 'fast'}
-                                            ]
-                                        }
-                                    }
-                                ]
-                            },
                             {
                                 'component': 'VCol',
                                 'props': {
@@ -404,18 +363,13 @@ class CloudLinkMonitor(_PluginBase):
                                     {
                                         'component': 'VTextField',
                                         'props': {
-                                            'model': 'interval',
-                                            'label': '消息延迟',
-                                            'placeholder': '10'
+                                            'model': 'min_size',
+                                            'label': '最小文件大小(MB)',
+                                            'placeholder': '100'
                                         }
                                     }
                                 ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
+                            },
                             {
                                 'component': 'VCol',
                                 'props': {
@@ -426,13 +380,18 @@ class CloudLinkMonitor(_PluginBase):
                                     {
                                         'component': 'VTextField',
                                         'props': {
-                                            'model': 'min_size',
-                                            'label': '最小文件大小(MB)',
-                                            'placeholder': '100'
+                                            'model': 'min_resolution',
+                                            'label': '最小分辨率(如:1920x1080)',
+                                            'placeholder': '1920x1080'
                                         }
                                     }
                                 ]
                             },
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
                             {
                                 'component': 'VCol',
                                 'props': {
@@ -463,23 +422,6 @@ class CloudLinkMonitor(_PluginBase):
                                             'model': 'max_duration',
                                             'label': '最大视频时长(分钟)',
                                             'placeholder': '120'
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'min_resolution',
-                                            'label': '最小分辨率(如:1920x1080)',
-                                            'placeholder': '1920x1080'
                                         }
                                     }
                                 ]
@@ -563,7 +505,7 @@ class CloudLinkMonitor(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '消息延迟默认10s，如网络较慢可酌情调大。\n定时执行格式为cron表达式，如：0 0 * * * 表示每天0点执行一次。'
+                                            'text': '定时执行格式为cron表达式，如：0 0 * * * 表示每天0点执行一次。'
                                         }
                                     }
                                 ]
