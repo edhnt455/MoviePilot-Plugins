@@ -265,19 +265,19 @@ class VideoTransitionImpl:
                     observer.schedule(FileMonitorHandler(mon_path, self), path=mon_path, recursive=True)
                     observer.daemon = True
                     observer.start()
-                    logger.info(f"{mon_path} 的云盘实时监控服务启动")
+                    logger.info(f"{mon_path} 的按需转移视频服务启动")
                 except Exception as e:
                     err_msg = str(e)
                     if "inotify" in err_msg and "reached" in err_msg:
                         logger.warn(
-                            f"云盘实时监控服务启动出现异常：{err_msg}，请在宿主机上（不是docker容器内）执行以下命令并重启："
+                            f"按需转移视频服务启动出现异常：{err_msg}，请在宿主机上（不是docker容器内）执行以下命令并重启："
                             + """
                                  echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
                                  echo fs.inotify.max_user_instances=524288 | sudo tee -a /etc/sysctl.conf
                                  sudo sysctl -p
                                  """)
                     else:
-                        logger.error(f"{mon_path} 启动目云盘实时监控失败：{err_msg}")
+                        logger.error(f"{mon_path} 启动按需转移视频服务失败：{err_msg}")
         return observers
 
     def event_handler(self, event, mon_path: str, text: str, event_path: str):
@@ -290,7 +290,7 @@ class VideoTransitionImpl:
         """
         立即运行一次，全量同步目录中所有文件
         """
-        logger.info("开始全量同步云盘实时监控目录 ...")
+        logger.info("开始转移符合条件的视频文件 ...")
         # 遍历所有监控目录
         for mon_path in self._dirconf.keys():
             # 获取目标目录
@@ -395,7 +395,7 @@ class VideoTransitionImpl:
                         logger.error(f"移动/复制文件失败：{file_path} - {str(e)}")
                         continue
 
-        logger.info("全量同步云盘实时监控目录完成！")
+        logger.info("视频转移完成！")
 
     def send_msg(self):
         """

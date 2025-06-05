@@ -60,9 +60,9 @@ class VideoTransition(_PluginBase):
     # 插件描述
     plugin_desc = "定时扫描目录文件变化，按需（分辨率、时长）转移视频文件。"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/edhnt455/MoviePilot-Plugins/blob/main/icons/VideoTransition.png"
+    plugin_icon = "https://raw.githubusercontent.com/edhnt455/MoviePilot-Plugins/main/icons/VideoTransition.png"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "edhnt455"
     # 作者主页
@@ -168,8 +168,8 @@ class VideoTransition(_PluginBase):
 
             # 运行一次定时服务
             if self._onlyonce:
-                logger.info("云盘实时监控服务启动，立即运行一次")
-                self._scheduler.add_job(name="云盘实时监控",
+                logger.info("按需转移视频文件服务启动，立即运行一次")
+                self._scheduler.add_job(name="按需转移视频文件",
                                         func=self._impl.sync_all, trigger='date',
                                         run_date=datetime.datetime.now(
                                             tz=pytz.timezone(settings.TZ)) + datetime.timedelta(seconds=3)
@@ -219,13 +219,13 @@ class VideoTransition(_PluginBase):
             if not event_data or event_data.get("action") != "cloud_link_sync":
                 return
             self.post_message(channel=event.event_data.get("channel"),
-                              title="开始同步云盘实时监控目录 ...",
+                              title="开始按需转移视频文件 ...",
                               userid=event.event_data.get("user"))
         if self._impl:
             self._impl.sync_all()
         if event:
             self.post_message(channel=event.event_data.get("channel"),
-                              title="云盘实时监控目录同步完成！", userid=event.event_data.get("user"))
+                              title="按需转移视频文件完成！", userid=event.event_data.get("user"))
 
     def get_state(self) -> bool:
         return self._enabled
@@ -239,7 +239,7 @@ class VideoTransition(_PluginBase):
         return [{
             "cmd": "/cloud_link_sync",
             "event": EventType.PluginAction,
-            "desc": "云盘实时监控同步",
+            "desc": "按需转移视频同步",
             "category": "",
             "data": {
                 "action": "cloud_link_sync"
@@ -251,8 +251,8 @@ class VideoTransition(_PluginBase):
             "path": "/cloud_link_sync",
             "endpoint": self.sync,
             "methods": ["GET"],
-            "summary": "云盘实时监控同步",
-            "description": "云盘实时监控同步",
+            "summary": "按需转移视频同步",
+            "description": "按需转移视频同步",
         }]
 
     def get_service(self) -> List[Dict[str, Any]]:
@@ -269,7 +269,7 @@ class VideoTransition(_PluginBase):
         if self._enabled and self._cron:
             return [{
                 "id": "VideoTransition",
-                "name": "云盘实时监控全量同步服务",
+                "name": "按需转移视频服务",
                 "trigger": CronTrigger.from_crontab(self._cron),
                 "func": self._impl.sync_all if self._impl else None,
                 "kwargs": {}
