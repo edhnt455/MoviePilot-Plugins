@@ -1,692 +1,480 @@
-# MoviePilot library
-from app.log import logger
-from app.plugins import _PluginBase
-from app.core.event import eventmanager
-from app.schemas.types import EventType
-from app.utils.system import SystemUtils
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from app.chain.media import MediaChain
-from app.core.metainfo import MetaInfo
-from app.core.config import settings
-from app import schemas
-from app.schemas.types import MediaType, EventType, SystemConfigKey
-from datetime import datetime
-
-from typing import Any, List, Dict, Tuple, Optional
-import subprocess
+import chardet
+import requests
 import os
-import threading
-from app.plugins.danmu import danmu_generator as generator
+import re
+import hashlib
+import subprocess
+import json
+from typing import Optional, Dict, List, Tuple
+from dataclasses import dataclass
+from app.log import logger
 
 
-class Danmu(_PluginBase):
-    # 插件名称
-    plugin_name = "弹幕刮削"
-    # 插件描述
-    plugin_desc = "使用弹弹play平台生成弹幕的字幕文件，实现弹幕播放。"
-    # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/HankunYu/MoviePilot-Plugins/main/icons/danmu.png"
-    # 主题色
-    plugin_color = "#3B5E8E"
-    # 插件版本
-    plugin_version = "1.2.0"
-    # 插件作者
-    plugin_author = "edhnt455"
-    # 作者主页
-    author_url = "https://github.com/edhnt455"
-    # 插件配置项ID前缀
-    plugin_config_prefix = "danmu_"
-    # 加载顺序
-    plugin_order = 1
-    # 可使用的用户级别
-    auth_level = 1
+@dataclass
+class VideoInfo:
+    file_name: str
+    file_hash: str
+    file_size: int
+    video_duration: int
+    match_mode: str = "hashAndFileName"
 
-    # 私有属性
-    _enabled = False
-    _width = 1920
-    _height = 1080
-    # 搞字体太复杂 以后再说
-    # _fontface = 'Arial'
-    _fontsize = 50
-    _alpha = 0.8
-    _duration = 6
-    _cron = '0 0 1 1 *'
-    _path = ''
-    _max_threads = 10
-    _onlyFromBili = False
-    _useTmdbID = True
 
-    media_chain = MediaChain()
-
-    def init_plugin(self, config: dict = None):
-        if config:
-            self._enabled = config.get("enabled", False)
-            self._width = config.get("width", 1920)
-            self._height = config.get("height", 1080)
-            # self._fontface = config.get("fontface")
-            self._fontsize = config.get("fontsize", 50)
-            self._alpha = config.get("alpha", 0.8)
-            self._duration = config.get("duration", 10)
-            self._path = config.get("path", "")
-            self._cron = config.get("cron", "0 0 1 1 *")
-            self._onlyFromBili = config.get("onlyFromBili", False)
-            self._useTmdbID = config.get("useTmdbID", True)
-        if self._enabled:
-            logger.info("弹幕加载插件已启用")
-
-    def get_state(self) -> bool:
-        return self._enabled
-
-    def get_service(self) -> List[Dict[str, Any]]:
-        """
-        注册插件公共服务
-        [{
-            "id": "服务ID",
-            "name": "服务名称",
-            "trigger": "触发器：cron/interval/date/CronTrigger.from_crontab()",
-            "func": self.xxx,
-            "kwargs": {} # 定时器参数
-        }]
-        """
-        return []
-        if self.get_state() and self._path and self._cron:
-            return [{
-                "id": "Danmu",
-                "name": "弹幕全局刮削服务",
-                "trigger": CronTrigger.from_crontab(self._cron),
-                "func": self.generate_danmu_global,
-                "kwargs": {}
-            }]
-        return []
+class DanmuAPI:
+    BASE_URL = 'https://dandanapi.hankun.online/api/v1'
+    HEADERS = {
+        'Accept': 'application/json',
+        "User-Agent": "Moviepilot/plugins 1.1.0"
+    }
 
     @staticmethod
-    def get_command() -> List[Dict[str, Any]]:
-        pass
-
-    def get_api(self) -> List[Dict[str, Any]]:
-        """
-        获取插件API
-        [{
-            "path": "/xx",
-            "endpoint": self.xxx,
-            "methods": ["GET", "POST"],
-            "summary": "API说明"
-        }]
-        """
-        return [{
-            "path": "/generate_danmu_with_path",
-            "endpoint": self.generate_danmu_global,
-            "methods": ["GET"],
-            "summary": "刮削弹幕",
-            "description": "根据设定的路径刮削弹幕"
-        }, {
-            "path": "/update_path",
-            "endpoint": self.update_path,
-            "methods": ["GET"],
-            "summary": "更新路径",
-            "description": "更新刮削路径"
-        }]
-
-    # 插件配置页面
-    def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """
-        拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
-        """
-        return [
-            {
-                'component': 'VForm',
-                'content': [
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'enabled',
-                                            'label': '启用插件',
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'onlyFromBili',
-                                            'label': '仅使用B站弹幕，建议关闭',
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'useTmdbID',
-                                            'label': '使用TMDB ID作为预备匹配方案，当无法匹配文件hash时尝试使用TMDB ID',
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 6,
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'width',
-                                            'label': '宽度，默认1920',
-                                            'type': 'number',
-
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 6,
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'height',
-                                            'label': '高度，默认1080',
-                                            'type': 'number',
-
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 6,
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'fontsize',
-                                            'label': '字体大小，默认50',
-                                            'type': 'number',
-
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 6,
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'alpha',
-                                            'label': '弹幕透明度，默认0.8',
-                                            'type': 'number',
-
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 6,
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'duration',
-                                            'label': '弹幕持续时间 默认10秒',
-                                            'type': 'number',
-
-                                        }
-                                    }
-                                ]
-                            },
-                            # {
-                            #     'component': 'VCol',
-                            #     'props': {
-                            #         'cols': 6,
-                            #     },
-                            #     'content': [
-                            #         {
-                            #             'component': 'VTextField',
-                            #             'props': {
-                            #                 'model': 'cron',
-                            #                 'label': '取消定期刮削，需要全局刮削请去 设置->服务 手动启动',
-                            #                 'type': 'text',
-
-                            #             }
-                            #         }
-                            #     ]
-                            # }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'content': [
-                                    {
-                                        'component': 'VTextarea',
-                                        'props': {
-                                            'model': 'path',
-                                            'label': '刮削媒体库路径，一行一个',
-                                            'placeholder': '留空不启用',
-                                            'rows': 2,
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    # {
-                    #     'component': 'VRow',
-                    #     'content': [
-                    #         {
-                    #             'component': 'VCol',
-                    #             'props': {
-                    #                 'cols': 6
-                    #             },
-                    #             'content': [
-                    #                 {
-                    #                     'component': 'VBtn',
-                    #                     'props': {
-                    #                         'color': 'primary',
-                    #                         'block': True
-                    #                     },
-                    #                     'content': [
-                    #                         {
-                    #                             'component': 'text',
-                    #                             'text': '手动刮削指定路径',
-                    #                             "onClick": "function(e) { fetch('http://{settings.HOST}:{settings.PORT}{settings.API_V1_STR}/plugin/Danmu/generate_danmu_with_path?apikey=' + {settings.API_TOKEN}).then(response => response.json()).then(data => { console.log('刮削完成:', data); }).catch(error => { console.error('刮削失败:', error); }); }",
-                    #                         }
-                    #                     ]
-                    #                 }
-                    #             ]
-                    #         },
-                    #     ]
-                    # },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'content': [
-                                    {
-                                        'component': 'VAlert',
-                                        'props': {
-                                            'type': 'info',
-                                            'variant': 'flat',
-                                            'text': '此插件会根据情况生成两种弹幕字幕文件，均为ass格式。.danmu为刮削出来的纯弹幕，.withDanmu为原生字幕与弹幕合并后的文件。自动刮削新入库文件。如果没有外挂字幕只有内嵌字幕会自动提取内嵌字幕生成.withDanmu文件。弹幕来源为 弹弹play 提供的多站合并资源以及 https://github.com/m13253/danmaku2ass 提供的思路。',
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ], {
-            "enabled": False,
-            "width": 1920,
-            "height": 1080,
-            "fontsize": 50,
-            "alpha": 0.8,
-            "duration": 6,
-            "cron": "0 0 1 1 *",
-            "path": "",
-            "onlyFromBili": False,
-            "useTmdbID": True
-        }
-
-    def get_page(self) -> List[dict]:
-        pass
-
-        return [
-            {
-                'component': 'VForm',
-                'content': [
-                    {
-                        'component': 'div',
-                        'content': [
-                            {
-                                'component': 'div',
-                                'text': '刮削的媒体库路径',
-                                'props': {
-                                    'class': 'text-subtitle-1 text-medium-emphasis mb-2'
-                                }
-                            },
-                            {
-                                'component': 'VTextarea',
-                                'props': {
-                                    'model': 'current_path',
-                                    'value': self._path,
-                                    'variant': 'outlined',
-                                    'bg-color': 'surface',
-                                    'rows': 2,
-                                    'readonly': True,
-                                    'disabled': True
-                                }
-                            }
-                        ]
-                    },
-                    # {
-                    #     'component': 'div',
-                    #     'props': {
-                    #         'class': 'mt-4'
-                    #     },
-                    #     'content': [
-                    #         {
-                    #             'component': 'div',
-                    #             'text': '新的媒体库路径',
-                    #             'props': {
-                    #                 'class': 'text-subtitle-1 text-medium-emphasis mb-2'
-                    #             }
-                    #         },
-                    #         {
-                    #             'component': 'VTextarea',
-                    #             'props': {
-                    #                 'model': 'path',
-                    #                 'id': 'path-input',
-                    #                 'placeholder': '请输入新的媒体库路径，一行一个',
-                    #                 'variant': 'outlined',
-                    #                 'bg-color': 'surface',
-                    #                 'rows': 2
-                    #             }
-                    #         }
-                    #     ]
-                    # },
-                    {
-                        'component': 'VRow',
-                        'props': {
-                            'class': 'mt-2'
-                        },
-                        'content': [
-                            # {
-                            #     'component': 'VCol',
-                            #     'props': {
-                            #         'cols': 6
-                            #     },
-                            #     'content': [
-                            #         {
-                            #             'component': 'VBtn',
-                            #             'props': {
-                            #                 'color': 'primary',
-                            #                 'block': True
-                            #             },
-                            #             'content': [
-                            #                 {
-                            #                     'component': 'text',
-                            #                     'text': '保存路径'
-                            #                 }
-                            #             ],
-                            #             'events': {
-                            #                 'click': {
-                            #                     'api': 'plugin/Danmu/update_path',
-                            #                     'method': 'GET',
-                            #                     'params': {
-                            #                         'apikey': settings.API_TOKEN,
-                            #                         'path': ''
-                            #                     }
-                            #                 }
-                            #             }
-                            #         }
-                            #     ]
-                            # },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 3,
-                                    'offset': 9
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VBtn',
-                                        'props': {
-                                            'color': 'primary',
-                                            'block': True
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'text',
-                                                'text': '开始刮削'
-                                            }
-                                        ],
-                                        'events': {
-                                            'click': {
-                                                'api': 'plugin/Danmu/generate_danmu_with_path',
-                                                'method': 'GET',
-                                                'params': {
-                                                    'apikey': settings.API_TOKEN
-                                                }
-                                            }
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'props': {
-                            'class': 'mt-8 mb-8'
-                        }
-                    }
-                ]
-            }
-        ]
-
-    def generate_danmu(self, file_path: str) -> Optional[str]:
-        """
-        生成弹幕文件
-        :param file_path: 视频文件路径
-        :return: 生成的弹幕文件路径，如果失败则返回None
-        """
-        meta = MetaInfo(file_path)
-        tmdb_id = None
-        episode = None
-        release_date = None
-        use_short_cache_ttl = False
-        if self._useTmdbID:
-            media_info = self.media_chain.recognize_media(meta=meta)
-            if media_info:
-                tmdb_id = media_info.tmdb_id
-                episode = meta.episode.split('E')[1] if meta.episode else None
-                release_date = media_info.release_date
-                # 检查发布日期是否在最近90天内
-                if release_date:
-                    try:
-                        release_datetime = datetime.strptime(release_date, '%Y-%m-%d')
-                        is_recent = (datetime.now() - release_datetime).days < 90
-                        if is_recent:
-                            logger.info(f"媒体 {tmdb_id} 是最近90天内发布的内容,使用短缓存")
-                            use_short_cache_ttl = True
-                    except ValueError:
-                        logger.warning(f"无效的发布日期格式: {release_date},使用默认缓存时间")
-
+    def calculate_md5_of_first_16MB(file_path: str) -> str:
+        md5 = hashlib.md5()
+        size_16MB = 16 * 1024 * 1024
         try:
-            return generator.danmu_generator(
-                file_path,
-                self._width,
-                self._height,
-                'Arial',
-                self._fontsize,
-                self._alpha,
-                self._duration,
-                self._onlyFromBili,
-                self._useTmdbID,
-                tmdb_id,
-                episode,
-                60 if use_short_cache_ttl else None
-            )
+            with open(file_path, 'rb') as f:
+                data = f.read(size_16MB)
+                md5.update(data)
+            return md5.hexdigest()
         except Exception as e:
-            logger.error(f"生成弹幕失败: {e}")
+            logger.error(f"计算MD5失败: {e}")
+            return ""
+
+    @staticmethod
+    def get_video_duration(file_path: str) -> Optional[float]:
+        try:
+            process = subprocess.Popen(
+                ['ffmpeg', '-i', file_path],
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE
+            )
+            _, stderr = process.communicate()
+
+            stderr = stderr.decode('utf-8', errors='ignore')
+            duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", stderr)
+
+            if duration_match:
+                hours, minutes, seconds = map(float, duration_match.groups())
+                return hours * 3600 + minutes * 60 + seconds
+            return None
+        except Exception as e:
+            logger.error(f"获取视频时长失败: {e}")
             return None
 
-    def update_path(self, path: str):
+    @staticmethod
+    def get_file_size(file_path: str) -> int:
+        try:
+            return os.path.getsize(file_path)
+        except Exception as e:
+            logger.error(f"获取文件大小失败: {e}")
+            return 0
+
+    @staticmethod
+    def search_by_tmdb_id(tmdb_id: int, episode: Optional[int] = None) -> Optional[str]:
         """
-        更新路径
+        使用TMDB ID搜索弹幕
+        :param tmdb_id: TMDB ID
+        :param episode: 集数
+        :return: 弹幕ID
         """
-        self._path = path
-        logger.info(f"更新路径: {self._path}")
-
-    def generate_danmu_global(self):
-        """
-        全局刮削弹幕
-        """
-        if not self._path:
-            logger.warning("未设置刮削路径，跳过刮削")
-            return schemas.Response(success=False, message="没有设定路径")
-
-        logger.info("开始弹幕刮削")
-        threading_list = []
-        paths = [path.strip() for path in self._path.split('\n') if path.strip()]
-
-        for path in paths:
-            if not os.path.exists(path):
-                logger.warning(f"路径不存在: {path}")
-                return schemas.Response(success=False, message=f"路径不存在: {path}")
-                continue
-
-            # 检查是否是单个文件
-            if os.path.isfile(path) and path.endswith(('.mp4', '.mkv')):
-                logger.info(f"刮削单个文件：{path}")
-                if len(threading_list) >= self._max_threads:
-                    threading_list[0].join()
-                    threading_list.pop(0)
-
-                thread = threading.Thread(
-                    target=self.generate_danmu,
-                    args=(path,)
-                )
-                thread.start()
-                threading_list.append(thread)
-                continue
-
-            # 处理目录
-            logger.info(f"刮削路径：{path}")
-            for root, _, files in os.walk(path):
-                for file in files:
-                    if file.endswith(('.mp4', '.mkv')):
-                        if len(threading_list) >= self._max_threads:
-                            threading_list[0].join()
-                            threading_list.pop(0)
-
-                        target_file = os.path.join(root, file)
-                        logger.info(f"开始生成弹幕文件：{target_file}")
-                        thread = threading.Thread(
-                            target=self.generate_danmu,
-                            args=(target_file,)
-                        )
-                        thread.start()
-                        threading_list.append(thread)
-
-        for thread in threading_list:
-            thread.join()
-
-        logger.info("弹幕刮削完成")
-        return schemas.Response(success=True, message="弹幕刮削完成 ")
-
-    @eventmanager.register(EventType.TransferComplete)
-    def generate_danmu_after_transfer(self, event):
-        """
-        传输完成后生成弹幕
-        """
-        if not self._enabled:
-            return
-
-        def __to_dict(_event):
-            """
-            递归将对象转换为字典
-            """
-            if isinstance(_event, dict):
-                return {k: __to_dict(v) for k, v in _event.items()}
-            elif isinstance(_event, list):
-                return [__to_dict(item) for item in _event]
-            elif isinstance(_event, tuple):
-                return tuple(__to_dict(list(_event)))
-            elif isinstance(_event, set):
-                return set(__to_dict(list(_event)))
-            elif hasattr(_event, 'to_dict'):
-                return __to_dict(_event.to_dict())
-            elif hasattr(_event, '__dict__'):
-                return __to_dict(_event.__dict__)
-            elif isinstance(_event, (int, float, str, bool, type(None))):
-                return _event
+        try:
+            url = f"{DanmuAPI.BASE_URL}/search/tmdb"
+            data = {
+                "tmdb_id": tmdb_id
+            }
+            if episode is not None:
+                data["episode"] = episode
             else:
-                return str(_event)
+                data["episode"] = 1
+            response = requests.post(url, json=data, headers=DanmuAPI.HEADERS)
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("success") and not result.get("hasMore"):
+                    animes = result.get("animes", [])
+                    if animes and len(animes) > 0:
+                        episodes = animes[0].get("episodes", [])
+                        if episodes and len(episodes) > 0:
+                            return str(episodes[0].get("episodeId"))
+            return None
+        except Exception as e:
+            logger.error(f"使用TMDB ID搜索弹幕失败: {e}")
+            return None
+
+    @staticmethod
+    def get_comment_id(file_path: str, use_tmdb_id: bool = False, tmdb_id: Optional[int] = None,
+                       episode: Optional[int] = None, cache_ttl: Optional[int] = None) -> Optional[str]:
+        """
+        获取弹幕ID
+        :param file_path: 视频文件路径
+        :param use_tmdb_id: 是否使用TMDB ID
+        :param tmdb_id: TMDB ID
+        :param episode: 集数
+        :return: 弹幕ID
+        """
+        try:
+            # 首先尝试使用文件名和文件大小匹配
+            file_name = os.path.basename(file_path)
+            file_size = DanmuAPI.get_file_size(file_path)
+            file_hash = DanmuAPI.calculate_md5_of_first_16MB(file_path)
+
+            video_info = VideoInfo(
+                file_name=file_name,
+                file_hash=file_hash,
+                file_size=file_size,
+                video_duration=int(DanmuAPI.get_video_duration(file_path) or 0)
+            )
+
+            # 检查当前目录下所有的 .id 文件
+            video_dir = os.path.dirname(file_path)
+            for file in os.listdir(video_dir):
+                if file.endswith('.id'):
+                    id_file = os.path.join(video_dir, file)
+                    logger.info(f"找到弹幕ID文件 - {id_file}")
+                    fileID = str(int(os.path.splitext(file)[0]) * 10000 + int(episode))
+                    return fileID
+
+            # 使用 match API
+            url = f"{DanmuAPI.BASE_URL}/match"
+            response = requests.post(url, json=video_info.__dict__, headers=DanmuAPI.HEADERS)
+
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("isMatched") and result.get("matches"):
+                    return str(result["matches"][0]["episodeId"])
+
+            # 如果使用TMDB ID且提供了TMDB ID，尝试使用TMDB ID匹配
+            if use_tmdb_id and tmdb_id is not None:
+                comment_id = DanmuAPI.search_by_tmdb_id(tmdb_id, episode)
+                if comment_id:
+                    return comment_id
+
+            return None
+        except Exception as e:
+            logger.error(f"获取弹幕ID失败: {e}")
+            return None
+
+    @staticmethod
+    def get_title_from_nfo(file_path: str) -> Optional[str]:
+        nfo_file = os.path.splitext(file_path)[0] + '.nfo'
+        try:
+            with open(nfo_file, 'r', encoding='utf-8') as f:
+                nfo_content = f.read()
+                title_match = re.search(r'<title>(.*)</title>', nfo_content)
+                if title_match:
+                    logger.info(f'从nfo文件中获取标题 - {title_match.group(1)}')
+                    return title_match.group(1)
+                logger.error('未找到标题信息')
+                return None
+        except Exception as e:
+            logger.error(f'读取nfo文件失败: {e}')
+            return None
+
+    @classmethod
+    def get_comments(cls, comment_id: str) -> Optional[Dict]:
+        """
+        获取弹幕内容
+        :param comment_id: 弹幕ID
+        :return: 弹幕数据
+        """
+        try:
+            url = f"{cls.BASE_URL}/{comment_id}?from_id=0&with_related=true&ch_convert=0"
+            response = requests.get(url, headers=cls.HEADERS)
+            if response.status_code == 200:
+                return response.json()
+            logger.error(f"获取弹幕失败: {response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"获取弹幕失败: {e}")
+            return None
+
+
+class DanmuConverter:
+    @staticmethod
+    def convert_timestamp(timestamp: float) -> str:
+        timestamp = round(timestamp * 100.0)
+        hour, minute = divmod(timestamp, 360000)
+        minute, second = divmod(minute, 6000)
+        second, centsecond = divmod(second, 100)
+        return f'{int(hour)}:{int(minute):02d}:{int(second):02d}.{int(centsecond):02d}'
+
+    @staticmethod
+    def write_ass_head(f, width: int, height: int, fontface: str, fontsize: float, alpha: float, styleid: str):
+        # 将透明度从0-1转换为0-255，并反转（因为ASS中0是完全不透明，255是完全透明）
+        alpha_value = int((1 - alpha) * 255)
+        f.write(
+            f'''[Script Info]
+; Script generated by Hankun 
+; Super thanks to https://github.com/m13253/danmaku2ass and https://www.dandanplay.com/
+Script Updated By: MoviePilot Danmu Plugin https://github.com/HankunYu/MoviePilot-Plugins
+ScriptType: v4.00+
+PlayResX: {width}
+PlayResY: {height}
+Aspect Ratio: {width}:{height}
+Collisions: Normal
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.601
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: {styleid}, {fontface}, {fontsize:.0f}, &H{alpha_value:02X}FFFFFF, &H{alpha_value:02X}FFFFFF, &H{alpha_value:02X}000000, &H{alpha_value:02X}000000, 0, 0, 0, 0, 100, 100, 0.00, 0.00, 1, {max(fontsize / 25.0, 1):.0f}, 0, 7, 0, 0, 0, 0
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+'''
+        )
+
+    @staticmethod
+    def find_non_overlapping_track(tracks: Dict[int, float], current_time: float, max_tracks: int) -> int:
+        possible_track = 1
+        last_time_remain = 100.0
+        for track in range(1, max_tracks + 1):
+            if track not in tracks or current_time >= tracks[track]:
+                return track
+            time_remain = float(tracks[track]) - current_time
+            if time_remain > last_time_remain:
+                possible_track = track
+        return possible_track
+
+    @classmethod
+    def convert_comments_to_ass(cls, comments: List[Dict], output_file: str, width: int,
+                                height: int, fontface: str, fontsize: float, alpha: float, duration: float):
+        styleid = 'Danmu'
+        max_tracks = int(height) // int(fontsize)
+        scrolling_tracks = {}
+        top_tracks = {}
+        bottom_tracks = {}
+
+        logger.info(f"{output_file} - 共匹配到{len(comments)}条弹幕。")
+
+        with open(output_file, 'w', encoding='utf-8-sig') as f:
+            cls.write_ass_head(f, width, height, fontface, fontsize, alpha, styleid)
+
+            for comment in comments:
+                try:
+                    p = comment.get('p', '').split(',')
+                    if len(p) < 3:
+                        logger.warning(f"弹幕数据格式不正确: {comment}")
+                        continue
+
+                    timeline = float(p[0])
+                    pos = int(p[1])
+                    color = int(p[2])
+                    text = comment.get('m', '')
+                    user = str(p[3])
+
+                    if not text:
+                        continue
+
+                    start_time = cls.convert_timestamp(timeline)
+                    end_time = cls.convert_timestamp(timeline + duration)
+
+                    gap = 1
+                    text_width = len(text) * fontsize * 0.6
+                    velocity = (width + text_width) / duration
+                    leave_time = text_width / velocity + gap
+
+                    color_hex = f'&H{color & 0xFFFFFF:06X}'
+                    styles = ''
+
+                    if pos == 1:  # 滚动弹幕
+                        track_id = cls.find_non_overlapping_track(scrolling_tracks, timeline, max_tracks)
+                        scrolling_tracks[track_id] = timeline + leave_time
+                        initial_y = (track_id - 1) * fontsize + 10
+                        styles = f'\\move({width}, {initial_y}, {-len(text) * fontsize}, {initial_y})'
+                    elif pos == 4:  # 底部弹幕
+                        track_id = cls.find_non_overlapping_track(bottom_tracks, timeline, max_tracks)
+                        bottom_tracks[track_id] = timeline + duration
+                        styles = f'\\an2\\pos({width / 2}, {height - 50 - (track_id - 1) * fontsize})'
+                    elif pos == 5:  # 顶部弹幕
+                        track_id = cls.find_non_overlapping_track(top_tracks, timeline, max_tracks)
+                        top_tracks[track_id] = timeline + duration
+                        styles = f'\\an8\\pos({width / 2}, {50 + (track_id - 1) * fontsize})'
+                    else:
+                        styles = f'\\move(0, 0, {width}, 0)'
+
+                    f.write(f'Dialogue: 0,{start_time},{end_time},{styleid},,0,0,0,,{{\\c{color_hex}{styles}}}{text}\n')
+                except Exception as e:
+                    logger.error(f"处理弹幕数据失败: {e}, 弹幕数据: {comment}")
+                    continue
+
+            logger.info('弹幕生成成功 - ' + output_file)
+
+
+class SubtitleProcessor:
+    @staticmethod
+    def get_video_streams(file_path: str) -> Dict:
+        try:
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            return json.loads(result.stdout) if result.returncode == 0 else {}
+        except Exception as e:
+            logger.error(f"获取视频流信息失败: {e}")
+            return {}
+
+    @staticmethod
+    def extract_subtitles(file_path: str, output_file: str, stream_index: int) -> bool:
+        try:
+            result = subprocess.run(
+                ['ffmpeg', '-i', file_path, '-map', f'0:{stream_index}', '-c:s', 'ass', output_file],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            return result.returncode == 0
+        except Exception as e:
+            logger.error(f"提取字幕失败: {e}")
+            return False
+
+    @classmethod
+    def try_extract_sub(cls, file_path: str):
+        streams_info = cls.get_video_streams(file_path)
+        for stream in streams_info.get('streams', []):
+            if stream.get('codec_type') == 'subtitle':
+                stream_index = stream['index']
+                base_name = os.path.splitext(file_path)[0]
+                language = stream.get('tags', {}).get('language', 'unknown')
+
+                if language not in ['zh', 'zho', 'chi', 'chs', 'cht', 'cn']:
+                    continue
+
+                output_file = f"{base_name}.{language}.ass"
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+
+                if cls.extract_subtitles(file_path, output_file, stream_index):
+                    logger.info(f'成功提取内嵌字幕 - {output_file}')
+                    break
+
+    @staticmethod
+    def find_subtitle_file(file_path: str) -> Optional[str]:
+        filename = os.path.splitext(os.path.basename(file_path))[0]
+        for root, _, files in os.walk(os.path.dirname(file_path)):
+            for file in files:
+                if (file.endswith(('.srt', '.ass', '.ssa')) and
+                        'danmu' not in file and
+                        file.startswith(filename)):
+                    sub2 = os.path.join(root, file)
+                    logger.info(f"找到字幕文件 - {sub2}")
+                    return sub2
+        logger.info("没找到字幕文件")
+        return None
+
+    @staticmethod
+    def combine_sub_ass(sub1: str, sub2: str) -> bool:
+        if not sub1 or not sub2:
+            return False
 
         try:
-            raw_data = __to_dict(event.event_data)
-            target_file = raw_data.get("transferinfo", {}).get("file_list_new", [None])[0]
+            with open(sub1, 'r', encoding='utf-8-sig') as f:
+                sub1_content = f.read()
 
-            if not target_file:
-                logger.warning("未找到目标文件")
-                return
+            with open(sub2, 'rb') as f:
+                raw_data = f.read()
+                result = chardet.detect(raw_data)
+                file_encoding = result['encoding']
 
-            logger.info(f"开始生成弹幕文件：{target_file}")
-            thread = threading.Thread(
-                target=self.generate_danmu,
-                args=(target_file,)
-            )
-            thread.start()
+            with open(sub2, 'r', encoding=file_encoding) as f:
+                sub2_content = f.read()
+
+            if os.path.splitext(sub2)[1].lower() in ['.ass', '.ssa']:
+                sub1ResX = re.search(r"PlayResX:\s*(\d+)", sub1_content)
+                sub2ResX = re.search(r"PlayResX:\s*(\d+)", sub2_content)
+
+                fontSizeRatio = 1
+                if sub1ResX and sub2ResX:
+                    fontSizeRatio = int(sub1ResX.group(1)) / int(sub2ResX.group(1)) * 0.8
+
+                format_match = re.search(r"Format:.+", sub2_content)
+                if not format_match:
+                    return False
+
+                style_lines = re.findall(r'Style:.*', sub2_content)
+                for i, line in enumerate(style_lines):
+                    elements = line.split(',')
+                    if len(elements) >= 3:
+                        elements[2] = str(int(float(elements[2]) * fontSizeRatio))
+                        style_lines[i] = ','.join(elements)
+
+                events_start = sub2_content.find('[Events]')
+                if events_start == -1:
+                    return False
+
+                events_content = sub2_content[events_start + len('[Events]'):].strip()
+                output = os.path.splitext(sub2)[0] + ".withDanmu.ass"
+
+                with open(output, 'w', encoding='utf-8-sig') as f:
+                    f.write(sub1_content)
+                    f.write('\n[V4+ Styles]\n')
+                    f.write(format_match.group())
+                    f.write('\n')
+                    f.write('\n'.join(style_lines))
+                    f.write('\n[Events]\n')
+                    f.write(events_content)
+
+                return True
+
+            return False
+
         except Exception as e:
-            logger.error(f"处理传输完成事件失败: {e}")
+            logger.error(f"合并字幕失败: {e}")
+            return False
 
-    def stop_service(self):
-        """
-        退出插件
-        """
-        pass
+
+def danmu_generator(file_path: str, width: int = 1920, height: int = 1080,
+                    fontface: str = 'Arial', fontsize: float = 50,
+                    alpha: float = 0.8, duration: float = 6, onlyFromBili: bool = False,
+                    use_tmdb_id: bool = False, tmdb_id: Optional[int] = None,
+                    episode: Optional[int] = None, cache_ttl: Optional[int] = None) -> Optional[str]:
+    try:
+        comment_id = DanmuAPI.get_comment_id(file_path, use_tmdb_id, tmdb_id, episode, cache_ttl)
+        if not comment_id:
+            logger.info(f"未找到对应弹幕 - {file_path}")
+            return None
+
+        comments_data = DanmuAPI.get_comments(comment_id)
+        if not comments_data:
+            return None
+
+        comments = sorted(comments_data["comments"], key=lambda x: float(x['p'].split(',')[0]))
+
+        if len(comments) == 0:
+            logger.info(f"弹幕数量为0，跳过生成 - {file_path}")
+            return None
+
+        # 过滤B站弹幕
+        if onlyFromBili:
+            comments = [comment for comment in comments if '[BiliBili]' in comment['p'].split(',')[3]]
+            logger.info(f"过滤后剩余{len(comments)}条B站弹幕")
+
+        output_file = os.path.splitext(file_path)[0] + '.danmu.ass'
+
+        DanmuConverter.convert_comments_to_ass(
+            comments, output_file,
+            width=int(width),
+            height=int(height),
+            fontface=fontface,
+            fontsize=float(fontsize),
+            alpha=float(alpha),
+            duration=float(duration)
+        )
+
+        sub2 = SubtitleProcessor.find_subtitle_file(file_path)
+        if not sub2:
+            SubtitleProcessor.try_extract_sub(file_path)
+            sub2 = SubtitleProcessor.find_subtitle_file(file_path)
+
+        if sub2:
+            SubtitleProcessor.combine_sub_ass(output_file, sub2)
+        else:
+            logger.error(f'未找到原生字幕，跳过合并 - {file_path}')
+
+        return output_file
+
+    except Exception as e:
+        logger.error(f"生成弹幕失败: {e}")
+        return None
+
