@@ -257,7 +257,7 @@ def sort_comments(comment_data):
 
 def generate_danmu_ass(comment_ID, file_path, width=1920, height=1080, fontface='Arial', fontsize=50, alpha=0.8, duration=6):
   comments = sort_comments(get_comments(comment_ID))
-  output = os.path.splitext(file_path)[0] + '.danmu.ass'
+  output = os.path.splitext(file_path)[0] + '.danmu2.ass'
   convert_comments_to_ass(comments, output, width, height, fontface, fontsize, alpha, duration)
 
 # sub1 为弹幕字幕，sub2 为原生字幕
@@ -340,8 +340,8 @@ def find_subtitle_file(file_path):
     filename = os.path.splitext(filename)[0]
     for root, dirs, files in os.walk(os.path.dirname(file_path)):
         for file in files:
-            # 检查文件是否以.srt .ass .ssa结尾，并且不包含'danmu'这个字符串
-            if (file.endswith('.srt') or file.endswith('.ass') or file.endswith('.ssa')) and 'danmu' not in file and file.startswith(filename):
+            # 检查文件是否以.srt .ass .ssa结尾，并且不包含'danmu2'这个字符串
+            if (file.endswith('.srt') or file.endswith('.ass') or file.endswith('.ssa')) and 'danmu2' not in file and file.startswith(filename):
                 sub2 = os.path.join(root, file)
                 logger.info("找到字幕文件 - " + sub2)
                 # 返回文件路径
@@ -417,7 +417,7 @@ def danmu_generator(file_path, width=1920, height=1080, fontface='Arial', fontsi
     sub2 = find_subtitle_file(file_path)
     # 生成内嵌字幕加弹幕文件
     if sub2 != None:
-        combine_sub_ass(os.path.splitext(file_path)[0] + '.danmu.ass', sub2)
+        combine_sub_ass(os.path.splitext(file_path)[0] + '.danmu2.ass', sub2)
     else:
         logger.error('未找到原生字幕，跳过合并 - ' + file_path)
 
