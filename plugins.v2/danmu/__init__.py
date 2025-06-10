@@ -36,7 +36,7 @@ class Danmu(_PluginBase):
     # 作者主页
     author_url = "https://github.com/edhnt455"
     # 插件配置项ID前缀
-    plugin_config_prefix = "danmu2_"
+    plugin_config_prefix = "danmu_"
     # 加载顺序
     plugin_order = 1
     # 可使用的用户级别
