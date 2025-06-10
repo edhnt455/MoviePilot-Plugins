@@ -23,7 +23,7 @@ class DanmuAPI:
     BASE_URL = 'https://dandanapi.hankun.online/api/v1'
     HEADERS = {
         'Accept': 'application/json',
-        "User-Agent": "Moviepilot/plugins 1.1.0"
+        "User-Agent": "Moviepilot/plugins 1.3.0"
     }
 
     @staticmethod
@@ -176,7 +176,7 @@ class DanmuAPI:
         :return: 弹幕数据
         """
         try:
-            url = f"{cls.BASE_URL}/{comment_id}?from_id=0&with_related=true&ch_convert=0"
+            url = f"{cls.BASE_URL}/{comment_id}?from_id=0&with_related=true&ch_convert=1"
             response = requests.get(url, headers=cls.HEADERS)
             if response.status_code == 200:
                 return response.json()
@@ -188,6 +188,102 @@ class DanmuAPI:
 
 
 class DanmuConverter:
+    @staticmethod
+    def filter_comments(comments: List[Dict]) -> List[Dict]:
+        """
+        过滤弹幕，先过滤乱码，再判断数量限制
+        :param comments: 弹幕列表
+        :return: 过滤后的弹幕列表
+        """
+        max_comments = 2000
+
+        # 按时间排序
+        sorted_comments = sorted(comments, key=lambda x: float(x['p'].split(',')[0]))
+
+        # 首先过滤乱码
+        # valid_comments = []
+        # for comment in sorted_comments:
+        #     text = comment.get('m', '')
+        #
+        #     # 跳过空文本
+        #     if not text:
+        #         continue
+        #
+        #     # 检测乱码
+        #     # 1. 检查是否包含过多特殊字符
+        #     special_chars = sum(1 for c in text if ord(c) > 0x4E00 and ord(c) < 0x9FFF)
+        #     if special_chars > len(text) * 0.5:  # 如果特殊字符超过文本长度的一半，认为是乱码
+        #         continue
+        #
+        #     # 2. 检查是否包含过多不可打印字符
+        #     non_printable = sum(1 for c in text if not c.isprintable())
+        #     if non_printable > len(text) * 0.3:  # 如果不可打印字符超过文本长度的30%，认为是乱码
+        #         continue
+        #
+        #     # 3. 检查是否包含过多emoji或特殊符号
+        #     emoji_count = sum(1 for c in text if ord(c) > 0x1F600 and ord(c) < 0x1F64F)
+        #     if emoji_count > len(text) * 0.3:  # 如果emoji超过文本长度的30%，认为是乱码
+        #         continue
+        #
+        #     # 4. 检查文本长度是否合理（中文通常2-20个字符）
+        #     if len(text) > 50 or len(text) < 1:  # 如果文本过长或过短，可能是乱码
+        #         continue
+        #
+        #     # 5. 检查是否包含过多重复字符
+        #     if len(set(text)) < len(text) * 0.3:  # 如果重复字符超过70%，可能是乱码
+        #         continue
+        #
+        #     # 如果文本不是乱码，添加到结果中
+        #     valid_comments.append(comment)
+        #
+        # logger.info(f"过滤乱码后剩余{len(valid_comments)}条弹幕")
+
+        # 如果数量在限制内，直接返回
+        # if len(valid_comments) <= max_comments:
+        #     return valid_comments
+        if len(sorted_comments) <= max_comments:
+            return sorted_comments
+
+        logger.info(f"弹幕数量超过{max_comments}条，开始过滤重复内容...")
+
+        # 过滤重复内容
+        unique_comments = []
+        seen_texts = set()
+        for comment in sorted_comments:
+            text = comment.get('m', '')
+            if text not in seen_texts:
+                seen_texts.add(text)
+                unique_comments.append(comment)
+
+        logger.info(f"去重后剩余{len(unique_comments)}条弹幕")
+
+        # 如果去重后仍然超过限制，随机过滤
+        if len(unique_comments) > max_comments:
+            # 将时间轴分成多个区间
+            time_intervals = 10  # 分成10个区间
+            interval_size = len(unique_comments) // time_intervals
+            filtered_comments = []
+
+            for i in range(time_intervals):
+                start_idx = i * interval_size
+                end_idx = (i + 1) * interval_size if i < time_intervals - 1 else len(unique_comments)
+                interval_comments = unique_comments[start_idx:end_idx]
+
+                # 计算每个区间需要保留的弹幕数量
+                target_count = max(1, int(len(interval_comments) * (max_comments / len(unique_comments))))
+
+                # 随机选择要保留的弹幕
+                if target_count < len(interval_comments):
+                    import random
+                    filtered_comments.extend(random.sample(interval_comments, target_count))
+                else:
+                    filtered_comments.extend(interval_comments)
+
+            logger.info(f"随机过滤后剩余{len(filtered_comments)}条弹幕")
+            return filtered_comments
+
+        return unique_comments
+
     @staticmethod
     def convert_timestamp(timestamp: float) -> str:
         timestamp = round(timestamp * 100.0)
@@ -239,10 +335,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     def convert_comments_to_ass(cls, comments: List[Dict], output_file: str, width: int,
                                 height: int, fontface: str, fontsize: float, alpha: float, duration: float):
         styleid = 'Danmu'
-        max_tracks = int(height) // int(fontsize)
+        # 确保所有数值都是正确的类型
+        width = int(width)
+        height = int(height)
+        fontsize = float(fontsize)
+        subtitle_area_height = 150
+
+        # 调整最大轨道数，使弹幕更密集
+        max_tracks = int((height - subtitle_area_height) / (fontsize * 0.8))
         scrolling_tracks = {}
         top_tracks = {}
         bottom_tracks = {}
+
+        # 统计信息
+        total_danmu_count = 0
+        bottom_danmu_count = 0
+        skipped_danmu_count = 0
+
+        # 过滤弹幕
+        comments = cls.filter_comments(comments)
 
         logger.info(f"{output_file} - 共匹配到{len(comments)}条弹幕。")
 
@@ -280,11 +391,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         track_id = cls.find_non_overlapping_track(scrolling_tracks, timeline, max_tracks)
                         scrolling_tracks[track_id] = timeline + leave_time
                         initial_y = (track_id - 1) * fontsize + 10
+
+                        # 检查弹幕位置是否在字幕区域内
+                        if subtitle_area_height > 0 and initial_y > (height - subtitle_area_height):
+                            skipped_danmu_count += 1
+                            continue
+
                         styles = f'\\move({width}, {initial_y}, {-len(text) * fontsize}, {initial_y})'
                     elif pos == 4:  # 底部弹幕
-                        track_id = cls.find_non_overlapping_track(bottom_tracks, timeline, max_tracks)
-                        bottom_tracks[track_id] = timeline + duration
-                        styles = f'\\an2\\pos({width / 2}, {height - 50 - (track_id - 1) * fontsize})'
+                        bottom_danmu_count += 1
+                        skipped_danmu_count += 1
+                        continue
                     elif pos == 5:  # 顶部弹幕
                         track_id = cls.find_non_overlapping_track(top_tracks, timeline, max_tracks)
                         top_tracks[track_id] = timeline + duration
@@ -293,11 +410,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         styles = f'\\move(0, 0, {width}, 0)'
 
                     f.write(f'Dialogue: 0,{start_time},{end_time},{styleid},,0,0,0,,{{\\c{color_hex}{styles}}}{text}\n')
+                    total_danmu_count += 1
                 except Exception as e:
                     logger.error(f"处理弹幕数据失败: {e}, 弹幕数据: {comment}")
                     continue
 
-            logger.info('弹幕生成成功 - ' + output_file)
+            logger.info(f'弹幕生成成功 - {output_file}')
+            logger.info(f'弹幕统计: 总数{total_danmu_count}, 底部弹幕{bottom_danmu_count}, 跳过{skipped_danmu_count}条')
 
 
 class SubtitleProcessor:
@@ -360,7 +479,7 @@ class SubtitleProcessor:
                     sub2 = os.path.join(root, file)
                     logger.info(f"找到字幕文件 - {sub2}")
                     return sub2
-        logger.info("没找到字幕文件")
+        logger.debug("没找到字幕文件")
         return None
 
     @staticmethod
@@ -470,7 +589,7 @@ def danmu_generator(file_path: str, width: int = 1920, height: int = 1080,
         if sub2:
             SubtitleProcessor.combine_sub_ass(output_file, sub2)
         else:
-            logger.error(f'未找到原生字幕，跳过合并 - {file_path}')
+            logger.debug(f'未找到原生字幕，跳过合并 - {file_path}')
 
         return output_file
 
