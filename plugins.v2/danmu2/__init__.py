@@ -20,9 +20,9 @@ import threading
 from app.plugins.danmu import danmu_generator as generator
 
 
-class Danmu(_PluginBase):
+class Danmu2(_PluginBase):
     # 插件名称
-    plugin_name = "弹幕刮削"
+    plugin_name = "弹幕刮削(自用)"
     # 插件描述
     plugin_desc = "使用弹弹play平台生成弹幕的字幕文件，实现弹幕播放。"
     # 插件图标
@@ -30,13 +30,13 @@ class Danmu(_PluginBase):
     # 主题色
     plugin_color = "#3B5E8E"
     # 插件版本
-    plugin_version = "1.2.0"
+    plugin_version = "1.0.0"
     # 插件作者
     plugin_author = "edhnt455"
     # 作者主页
     author_url = "https://github.com/edhnt455"
     # 插件配置项ID前缀
-    plugin_config_prefix = "danmu_"
+    plugin_config_prefix = "danmu2_"
     # 加载顺序
     plugin_order = 1
     # 可使用的用户级别
