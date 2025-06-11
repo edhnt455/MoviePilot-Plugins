@@ -33,7 +33,7 @@
         "author": "hankun",
         "level": 1
     },
-    "Danmu2": {
+    "Danmuziyong": {
         "name": "弹幕刮削(自用)",
         "description": "使用弹弹play平台生成弹幕的字幕文件，实现弹幕播放。",
         "version": "1.0.0",
