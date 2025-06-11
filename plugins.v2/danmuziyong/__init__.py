@@ -30,7 +30,7 @@ class Danmuziyong(_PluginBase):
     # 主题色
     plugin_color = "#3B5E8E"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "edhnt455"
     # 作者主页
