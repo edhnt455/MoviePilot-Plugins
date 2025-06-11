@@ -92,8 +92,8 @@ class Danmu2(_PluginBase):
         return []
         if self.get_state() and self._path and self._cron:
             return [{
-                "id": "Danmu",
-                "name": "弹幕全局刮削服务",
+                "id": "Danmu2",
+                "name": "弹幕全局刮削服务(自用)",
                 "trigger": CronTrigger.from_crontab(self._cron),
                 "func": self.generate_danmu_global,
                 "kwargs": {}
