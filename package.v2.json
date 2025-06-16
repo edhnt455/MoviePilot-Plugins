@@ -1,0 +1,28 @@
+{
+    "Danmuziyong": {
+        "name": "弹幕刮削(自用)",
+        "description": "使用弹弹play平台生成弹幕的字幕文件，实现弹幕播放。",
+        "version": "1.0.1",
+        "icon": "https://raw.githubusercontent.com/HankunYu/MoviePilot-Plugins/main/icons/danmu.png",
+        "color": "#3B5E8E",
+        "author": "edhnt455",
+        "level": 1,
+        "history": {
+            "v1.0.1": "区分版本号",
+            "v1.0.0": "第一版"
+          }
+    },
+	 "VideoTransition": {
+        "name": "按需转移视频文件",
+        "description": "定时扫描目录文件变化，按需（分辨率、时长）转移视频文件。",
+        "labels": "工具",
+        "version": "1.0.1",
+        "icon": "https://raw.githubusercontent.com/edhnt455/MoviePilot-Plugins/main/icons/VideoTransition.png",
+        "author": "edhnt455",
+        "level": 1,
+        "history": {
+          "v1.0.1": "修复图标，优化日志记录",
+          "v1.0": "自用第一版"
+        }
+	}
+}
