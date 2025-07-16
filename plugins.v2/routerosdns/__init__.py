@@ -25,11 +25,11 @@ class RouterOSDNS(_PluginBase):
     # 插件版本
     plugin_version = "1.2"
     # 插件作者
-    plugin_author = "Aqr-K"
+    plugin_author = "edhnt455"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/Aqr-K/MoviePilot-Plugins/main/icons/Routeros_A.png"
+    plugin_icon = "https://raw.githubusercontent.com/edhnt455/MoviePilot-Plugins/main/icons/Routeros_A.png"
     # 作者主页
-    author_url = "https://github.com/Aqr-K"
+    author_url = "https://github.com/edhnt455/MoviePilot-Plugins"
     # 插件配置项ID前缀
     plugin_config_prefix = "routerosdns_"
     # 加载顺序

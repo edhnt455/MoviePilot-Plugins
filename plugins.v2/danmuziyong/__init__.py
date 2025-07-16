@@ -26,7 +26,7 @@ class Danmuziyong(_PluginBase):
     # 插件描述
     plugin_desc = "使用弹弹play平台生成弹幕的字幕文件，实现弹幕播放。"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/HankunYu/MoviePilot-Plugins/main/icons/danmu.png"
+    plugin_icon = "https://raw.githubusercontent.com/edhnt455/MoviePilot-Plugins/main/icons/danmu.png"
     # 主题色
     plugin_color = "#3B5E8E"
     # 插件版本
