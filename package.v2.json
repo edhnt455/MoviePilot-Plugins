@@ -25,7 +25,7 @@
           "v1.0": "自用第一版"
         }
 	},
-    "RouterOSDNS": {
+    "RouterOSDNS2": {
         "name": "ROS软路由DNS Static",
         "description": "定时将本地Hosts同步至 RouterOS 的 DNS Static 中。",
         "version": "1.0",
