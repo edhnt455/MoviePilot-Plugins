@@ -28,13 +28,14 @@
     "RouterOSDNS2": {
         "name": "ROS软路由DNS Static",
         "description": "定时将本地Hosts同步至 RouterOS 的 DNS Static 中。",
-        "version": "1.4",
+        "version": "1.5",
         "labels": "工具",
         "icon": "https://raw.githubusercontent.com/edhnt455/MoviePilot-Plugins/main/icons/Routeros_A.png",
         "author": "edhnt455",
         "v2": true,
         "level": 1,
         "history": {
+            "v1.5": "更换请求库",
             "v1.4": "添加一个依赖",
             "v1.3": "作者原版",
             "v1.2": "增加：机器人命令调用，api接口调用。",
