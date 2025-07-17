@@ -23,7 +23,7 @@ class RouterOSDNS2(_PluginBase):
     # 插件描述
     plugin_desc = "定时将本地Hosts同步至 RouterOS 的 DNS Static 中。"
     # 插件版本
-    plugin_version = "1.2"
+    plugin_version = "1.3"
     # 插件作者
     plugin_author = "edhnt455"
     # 插件图标
