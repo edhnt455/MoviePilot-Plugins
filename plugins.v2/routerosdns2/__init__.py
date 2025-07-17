@@ -2,6 +2,7 @@ import ipaddress
 import threading
 from typing import Any, List, Dict, Tuple, Optional
 
+from requests import Response, auth
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.core.config import settings
@@ -9,7 +10,9 @@ from app.core.event import eventmanager, Event
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas.types import NotificationType, EventType
+from app.utils.http import RequestUtils
 from app.utils.system import SystemUtils
+from app.utils.url import UrlUtils
 from librouteros import connect
 
 lock = threading.Lock()
@@ -21,7 +24,7 @@ class RouterOSDNS2(_PluginBase):
     # 插件描述
     plugin_desc = "定时将本地Hosts同步至 RouterOS 的 DNS Static 中。"
     # 插件版本
-    plugin_version = "1.5"
+    plugin_version = "1.6"
     # 插件作者
     plugin_author = "edhnt455"
     # 插件图标
@@ -615,30 +618,119 @@ class RouterOSDNS2(_PluginBase):
         """
         校正地址格式
         """
-        # 提取主机名
-        if "://" in url:
-            url = url.split("://", 1)[1]
-        hostname = url.split("/")[0].split(":")[0]
-        return hostname
+        data = UrlUtils.parse_url_params(url=url)
+        if data:
+            protocol, hostname, port, path = data
+            base_url = f"{protocol}://{hostname}:{port}{path}"
+            return base_url
+        else:
+            raise ValueError("无法解析地址格式，请检查地址是否正确")
+
+    def __get_ros_auth(self):
+        """
+        获取路由器 auth
+        """
+        if not self._username or not self._password:
+            raise ValueError("RouterOS用户名或密码未设置")
+        return auth.HTTPBasicAuth(username=self._username, password=self._password)
+
+    def __get_base_url(self) -> Optional[str]:
+        """
+        获取基础api
+        """
+        try:
+            if not self._address:
+                raise ValueError("RouterOS地址未设置")
+            return self.__correct_the_address_format(url=self._address) + "rest/ip/dns/static"
+        except Exception as e:
+            logger.error(f"获取RouterOS地址失败: {e}")
+            return None
+
+    def add_and_update_action(self) -> bool:
+        """
+        工作流 - 添加/更新
+        """
+        try:
+            self.add_or_update_remote_dns_from_local_hosts()
+        except Exception as e:
+            logger.error(f"工作流调用：添加/更新操作失败: {e}")
+            return False
+        return True
+
+    def delete_action(self) -> bool:
+        """
+        工作流 - 删除
+        """
+        try:
+            self.delete_local_hosts_from_remote_dns()
+        except Exception as e:
+            logger.error(f"工作流调用：添加/更新操作失败: {e}")
+            return False
+        return True
+
+    @eventmanager.register(EventType.PluginAction)
+    def add_and_update_command(self, event: Event = None) -> bool:
+        """
+        命令 - 添加/更新
+        """
+        if not event:
+            return False
+        else:
+            event_data = event.event_data
+            if not event_data or event_data.get("action") != "sync_hosts_to_ros_dns":
+                return False
+            try:
+                logger.info(f"收到命令，开始 同步本地hosts到RouterOS DNS Static")
+                self.add_or_update_remote_dns_from_local_hosts()
+                logger.info(f"命令调用：添加/更新操作成功")
+            except Exception as e:
+                logger.error(f"命令调用：添加/更新操作失败: {e}")
+                return False
+            return True
+
+    @eventmanager.register(EventType.PluginAction)
+    def delete_command(self, event: Event = None) -> bool:
+        """
+        命令 - 删除
+        """
+        if not event:
+            return False
+        else:
+            event_data = event.event_data
+            if not event_data or event_data.get("action") != "delete_hosts_from_ros_dns":
+                return False
+            try:
+                logger.info(f"收到命令，开始 删除存在于当前Hosts中的RouterOS DNS Static")
+                self.delete_local_hosts_from_remote_dns()
+                logger.info(f"命令调用：删除操作成功")
+            except Exception as e:
+                logger.error(f"命令调用：删除操作失败: {e}")
+                return False
+            return True
 
     def add_or_update_remote_dns_from_local_hosts(self) -> bool:
         """
         添加/更新 本地hosts内容到远程dns
         """
-        # 获取远程hosts
-        remote_dns_static_list = self.__get_dns_record()
-        if remote_dns_static_list is None:
+        # dns 地址
+        base_url = self.__get_base_url()
+        if not base_url:
             return False
+        # 获取远程hosts
+        response = self.__get_dns_record(url=base_url)
+        if not response or response.ok is False:
+            return False
+        remote_dns_static_list = response.json()
         # 获取本地hosts
         local_hosts_lines = self.__get_local_hosts()
         # 将本地的hosts解析转换成列表字典
         local_hosts_list = self.__get_local_hosts_list(lines=local_hosts_lines)
 
-        logger.info(f"本地hosts列表：{local_hosts_list}")
-        logger.info(f"远程dns列表：{remote_dns_static_list}")
+        logger.debug(f"本地hosts列表：{local_hosts_list}")
+        logger.debug(f"远程dns列表：{remote_dns_static_list}")
 
         if not local_hosts_list:
-            logger.info("获取本地hosts失败，更新失败，请检查日志")
+            self.__send_message(title="【RouterOS路由DNS Static更新】", text="获取本地hosts失败，更新失败，请检查日志")
             return False
 
         # 获取需要更新/新增的列表
@@ -652,36 +744,54 @@ class RouterOSDNS2(_PluginBase):
         else:
             add_success, update_success, add_error, update_error = 0, 0, 0, 0
 
+            def add(a_success, a_error):
+                """
+                新增
+                """
+                r = self.__add_dns_record(url=base_url, record=record_data)
+                if r.ok:
+                    a_success += 1
+                else:
+                    a_error += 1
+                return a_success, a_error
+
+            def update(u_success, u_error):
+                """
+                更新
+                """
+                r = self.__update_dns_record(url=base_url, record_id=record_id, record=record_data)
+
+                if r and r.ok:
+                    u_success += 1
+                else:
+                    u_error += 1
+                return u_success, u_error
+
             if updated_list:
                 for update_dict in updated_list:
                     record_id = update_dict[".id"]
                     record_name = update_dict["name"]
+                    record_data = update_dict
                     try:
-                        record_data = update_dict.copy()
-                        del record_data[".id"]
-                        success = self.__update_dns_record(record_id, record_data)
-                        if success:
-                            update_success += 1
-                        else:
-                            update_error += 1
+                        # 安全更新，避免id被异常更新产生错误
+                        # if ".id" in record_data:
+                        #     del record_data['.id']
+                        update_success, update_error = update(u_success=update_success, u_error=update_error)
                     except Exception as e:
-                        logger.info(f"更新 {record_name} 失败: {e}")
+                        logger.error(f"更新 {record_name} 失败: {e}")
                         update_error += 1
 
             if add_list:
                 for add_dict in add_list:
                     record_name = add_dict["name"]
+                    record_data = add_dict
                     try:
-                        record_data = add_dict.copy()
+                        # 安全更新，避免id被异常更新产生错误
                         if ".id" in record_data:
-                            del record_data[".id"]
-                        result = self.__add_dns_record(record_data)
-                        if result:
-                            add_success += 1
-                        else:
-                            add_error += 1
+                            del record_data['.id']
+                        add_success, add_error = add(a_success=add_success, a_error=add_error)
                     except Exception as e:
-                        logger.info(f"添加 {record_name} 失败: {e}")
+                        logger.error(f"添加 {record_name} 失败: {e}")
                         add_error += 1
 
             # 开始汇报结果
@@ -690,6 +800,7 @@ class RouterOSDNS2(_PluginBase):
                     f"应更新 {int(update_success) + int(update_error)} 项记录，"
                     f"成功 {int(update_success)} 项，失败 {int(update_error)} 项。")
             logger.info(text)
+            self.__send_message(title="【RouterOS路由DNS Static更新】", text=text)
 
             return True
 
@@ -697,16 +808,21 @@ class RouterOSDNS2(_PluginBase):
         """
         在远程 dns 中同步删除本地 hosts
         """
-        # 获取远程hosts
-        remote_dns_static_list = self.__get_dns_record()
-        if remote_dns_static_list is None:
+        # dns 地址
+        base_url = self.__get_base_url()
+        if not base_url:
             return False
+        # 获取远程hosts
+        response = self.__get_dns_record(url=base_url)
+        if not response or response.ok is False:
+            return False
+        remote_dns_static_list = response.json()
         # 获取本地hosts
         local_hosts_lines = self.__get_local_hosts()
         # 将本地的hosts解析转换成列表字典
         local_hosts_list = self.__get_local_hosts_list(lines=local_hosts_lines)
         if not local_hosts_list:
-            logger.info("获取本地hosts失败，删除失败，请检查日志")
+            self.__send_message(title="【RouterOS路由DNS Static同步删除】", text="获取本地hosts失败，删除失败，请检查日志")
             return False
 
         if remote_dns_static_list:
@@ -716,22 +832,23 @@ class RouterOSDNS2(_PluginBase):
             if delete_list:
                 delete_success, delete_error = 0, 0
                 for delete_dict in delete_list:
-                    record_id = delete_dict["id"]
+                    record_id = delete_dict[".id"]
                     record_name = delete_dict["name"]
                     try:
-                        success = self.__delete_dns_record(record_id)
+                        success = self.__delete_dns_record(url=base_url, record_id=record_id)
                         if success:
                             delete_success += 1
                         else:
                             delete_error += 1
                     except Exception as e:
-                        logger.info(f"同步删除 {record_name} 失败：{e}")
+                        logger.error(f"同步删除 {record_name} 失败：{e}")
                         delete_error += 1
 
                 text = f"本次删除结果：应删除 {int(delete_success) + int(delete_error)} 项记录，成功 {int(delete_success)} 项，失败 {int(delete_error)} 项。"
                 logger.info(text)
+                self.__send_message(title="【RouterOS路由DNS Static同步删除】", text=text)
         else:
-            logger.info(f"远程 dns 列表为空，跳过")
+            logger.warn(f"远程 dns 列表为空，跳过")
 
         return True
 
@@ -795,7 +912,7 @@ class RouterOSDNS2(_PluginBase):
             return update_list, add_list
 
         except Exception as e:
-            logger.info(f"无法获取需要 新增 或 更新 的 dns 列表：{e}")
+            logger.error(f"无法获取需要 新增 或 更新 的 dns 列表：{e}")
             return [], []
 
     @staticmethod
@@ -820,7 +937,7 @@ class RouterOSDNS2(_PluginBase):
 
             return delete_list
         except Exception as e:
-            logger.info(f"无法获取需要 删除 的 dns 列表：{e}")
+            logger.error(f"无法获取需要 删除 的 dns 列表：{e}")
             return []
 
     @staticmethod
@@ -840,7 +957,7 @@ class RouterOSDNS2(_PluginBase):
             logger.info(f"本地hosts文件读取成功: {local_hosts}")
             return local_hosts
         except Exception as e:
-            logger.info(f"读取本地hosts文件失败: {e}")
+            logger.error(f"读取本地hosts文件失败: {e}")
             return []
 
     @staticmethod
@@ -899,8 +1016,22 @@ class RouterOSDNS2(_PluginBase):
         except ValueError:
             pass
         except Exception as e:
-            logger.info(f"判断 {ip} 类型错误：{e}")
+            logger.error(f"判断 {ip} 类型错误：{e}")
         return False, None
+
+    def __send_message(self, title: str, text: str) -> bool:
+        """
+        发送消息
+        """
+        if not self._notify:
+            return False
+        try:
+            self.post_message(mtype=getattr(NotificationType, self._msg_type, NotificationType.Plugin.value),
+                              title=title,
+                              text=text)
+        except Exception as e:
+            logger.error(f"发送消息失败: {e}")
+            return False
 
     def __build_record_data(self, record_address: str, record_name: str, ip_version: int, record_id: str = None,
                             record_data: dict = None) -> dict:
@@ -916,7 +1047,7 @@ class RouterOSDNS2(_PluginBase):
 
         if self._ttl < 120:
             self._ttl = 24 * 60 * 60
-
+            self.__update_config()
         # 将 ttl 转换成 d h:m:s 格式
         total_seconds = int(self._ttl)
         days = total_seconds // (24 * 60 * 60)
@@ -928,6 +1059,7 @@ class RouterOSDNS2(_PluginBase):
 
         ttl_str = f"{days}d {hours}h{minutes}m{seconds}s"
 
+        # 在原有数据的基础上进行更新
         if record_data:
             record = record_data
             record["ttl"] = ttl_str
@@ -958,88 +1090,107 @@ class RouterOSDNS2(_PluginBase):
                 record["address"] = ''
         return record
 
-    def __get_api_connection(self):
-        """
-        获取 RouterOS API 连接
-        """
-        if not self._address or not self._username or not self._password:
-            raise ValueError("RouterOS地址、用户名或密码未设置")
-        try:
-            host = self.__correct_the_address_format(self._address)
-            return connect(
-                host=host,
-                username=self._username,
-                password=self._password,
-                timeout=self._timeout
-            )
-        except Exception as e:
-            logger.info(f"获取 RouterOS 连接时出错: {e}")
-            return None
+    """
+    api 请求方法
+    """
 
-    def __get_dns_record(self, record_id=None) -> Optional[List[Dict]]:
+    def __request_ros_api(self, method, url: str, record: dict = None) -> Optional[Response] | List:
+        """
+        通用请求方法，处理RouterOS路由器的DNS Static
+        """
+        log_tag = "尝试处理"
+        try:
+            if method == "GET":
+                log_tag = "获取"
+            elif method == "PUT":
+                log_tag = "添加"
+            elif method == "PATCH":
+                log_tag = "更新"
+            elif method == "DELETE":
+                log_tag = "删除"
+            else:
+                raise ValueError(f"不支持的请求方法: {method}")
+
+            data = {"json": record} if record else {}
+            response = RequestUtils(timeout=self._timeout,
+                                    content_type="application/json",
+                                    ua=settings.USER_AGENT
+                                    ).request(url=url,
+                                              method=method,
+                                              auth=self.__get_ros_auth(),
+                                              verify=False,
+                                              **data)
+
+            if not response:
+                logger.error(f"{log_tag} DNS 记录失败{(': ' + str(response.content)) if str(response.content) else ''}")
+                return []
+            elif response.ok is False:
+                logger.error(f"{log_tag} DNS 记录失败，状态码: {response.status_code}，响应: {response.content}")
+                return []
+            else:
+                logger.debug(f"{log_tag} DNS 记录成功: {response.content}")
+            return response
+
+        except Exception as e:
+            # 处理其他异常
+            logger.error(f"{log_tag} DNS 记录时发生错误: {e}")
+            return []
+
+    def __get_dns_record(self, url: str, record_id=None) -> Optional[Response]:
         """
         获取 MikroTik 路由器的 DNS 记录列表。
         """
-        api = self.__get_api_connection()
-        if not api:
-            return None
-        try:
-            dns_static = api.path('/ip/dns/static')
-            if record_id:
-                return list(dns_static.select().where('.id', record_id))
-            return list(dns_static)
-        except Exception as e:
-            logger.info(f"获取 DNS 记录失败: {e}")
-            return None
-        finally:
-            api.close()
+        if record_id:
+            url = f"{url.rstrip('/')}/{record_id}"
+        response = self.__request_ros_api(url=url, method="GET")
+        return response
 
-    def __add_dns_record(self, record: dict) -> Optional[Dict]:
+    def __add_dns_record(self, url: str, record: dict) -> Optional[Response]:
         """
         向 MikroTik 路由器添加 DNS 记录。
         """
-        api = self.__get_api_connection()
-        if not api:
-            return None
-        try:
-            dns_static = api.path('/ip/dns/static')
-            return dns_static.add(**record)
-        except Exception as e:
-            logger.info(f"添加 DNS 记录失败: {e}")
-            return None
-        finally:
-            api.close()
+        response = self.__request_ros_api(url=url, method="PUT", record=record)
+        return response
 
-    def __update_dns_record(self, record_id, record: dict) -> bool:
+    def __update_dns_record(self, url, record_id, record: dict) -> Optional[Response]:
         """
         更新 MikroTik 路由器的 DNS 记录。
         """
-        api = self.__get_api_connection()
-        if not api:
-            return False
-        try:
-            dns_static = api.path('/ip/dns/static')
-            dns_static.update(id=record_id, **record)
-            return True
-        except Exception as e:
-            logger.info(f"更新 DNS 记录失败: {e}")
-            return False
-        finally:
-            api.close()
+        if record_id:
+            url = f"{url.rstrip('/')}/{record_id}"
+        response = self.__request_ros_api(url=url, method="PATCH", record=record)
+        return response
 
-    def __delete_dns_record(self, record_id) -> bool:
+    def __delete_dns_record(self, url, record_id) -> Optional[Response]:
         """
         从 MikroTik 路由器删除单条 DNS 记录。
         """
-        api = self.__get_api_connection()
-        if not api:
-            return False
-        try:
-            dns_static = api.path('/ip/dns/static')
-            dns_static.remove(id=record_id)
-            return True
-        except Exception as e:
-            logger.info(f"删除 DNS 记录失败: {e}")
-            return False
-        finally:
-            api.close()
+        if record_id:
+            url = f"{url.rstrip('/')}/{record_id}"
+        response = self.__request_ros_api(url=url, method="DELETE")
+        return response
+
+    def __update_config(self):
+        """
+        更新配置
+        """
+        config = {
+            "enabled": self._enabled,
+            "onlyonce": self._onlyonce,
+            "del_dns": self._del_dns,
+            "cron_enabled": self._cron_enabled,
+            "cron": self._cron,
+            "notify": self._notify,
+            "msg_type": self._msg_type,
+            "address": self._address,
+            "timeout": self._timeout,
+            "ttl": self._ttl,
+            "username": self._username,
+            "password": self._password,
+            "ipv4": self._ipv4,
+            "ipv6": self._ipv6,
+            "match_subdomain": self._match_subdomain,
+            "ignore": self._ignore
+        }
+        # 更新配置
+        self.update_config(config)
