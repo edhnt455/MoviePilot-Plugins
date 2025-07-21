@@ -1,0 +1,13 @@
+name: Sync to Gitea
+on: [push]
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Push to Gitea
+        run: |
+          git remote add gitea https://gitea.hejiale.vip:16667/edhnt455/MoviePilot-Plugins.git
+          git push gitea ${GITHUB_REF#refs/heads/}
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
