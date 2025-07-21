@@ -7,7 +7,7 @@ jobs:
       - uses: actions/checkout@v3
       - name: Push to Gitea
         run: |
-          git remote add gitea https://gitea.hejiale.vip:16667/edhnt455/MoviePilot-Plugins.git
-          git push gitea ${GITHUB_REF#refs/heads/}
+          git remote add gitea https://admin:${{ secrets.GITEA_TOKEN }}@gitea.hejiale.vip:16667/edhnt455/MoviePilot-Plugins.git
+          git push gitea HEAD:main
         env:
           GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
