@@ -4,10 +4,23 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Push to Gitea
-        run: |
-          git remote add gitea https://admin:${{ secrets.GITEA_TOKEN }}@gitea.hejiale.vip:16667/edhnt455/MoviePilot-Plugins.git
-          git push gitea HEAD:main
-        env:
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          - uses: actions/checkout@v4
+            with:
+              fetch-depth: 0  # 获取完整历史记录
+    
+          - name: Configure Git
+            run: |
+              git config --global user.name "GitHub Actions"
+              git config --global user.email "actions@github.com"
+    
+          - name: Add Gitea remote
+            run: |
+              git remote add gitea https://admin:${{ secrets.GITEA_TOKEN }}@gitea.hejiale.vip:16667/edhnt455/MoviePilot-Plugins.git
+    
+          - name: Sync repositories
+            run: |
+              git fetch gitea
+              git pull gitea main --allow-unrelated-histories || echo "无法自动合并，可能需要手动解决冲突"
+              git push gitea HEAD:main
+            env:
+              GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
